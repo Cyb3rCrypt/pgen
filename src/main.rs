@@ -449,7 +449,7 @@ mod tests {
         // Probability(index 0 allows U) ≈ 25% (roughly 2.5 slots out of 10).
         // Probability(index 0 is U | NO SHUFFLE) = 100%.
         // We set a conservative upper bound of 90% to detect total lack of shuffle.
-assert!(
+        assert!(
             uppercase_at_start_count < 90,
             "Shuffle failed? Index 0 was uppercase in {uppercase_at_start_count} of {trials} trials"
         );
