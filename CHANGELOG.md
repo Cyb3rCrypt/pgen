@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-02-25
+
+### Fixed
+
+- UUID v7 now implements RFC 9562 §6.2 Method 1 monotonic ordering: a 12-bit
+  counter in `rand_a` (bytes 6–7) guarantees strict lexicographic increase
+  across all calls within the same process, even within the same millisecond.
+  Previously, sub-millisecond sort order was not guaranteed.
+- Clock rollback is clamped to `last_ms` rather than panicking, preserving
+  local monotonicity under NTP adjustments.
+
+### Changed
+
+- CI: `cargo test` now runs with `--test-threads=1` to prevent races on the
+  shared monotonic state in UUID v7 tests.
+
+### Tests
+
+- Added `uuid_v7_monotonic` — 200 UUIDs in strict lexicographic order.
+- Added `uuid_v7_monotonic_counter_increments` — 50 UUIDs strictly increasing as u128.
+- Added `uuid_v7_clock_rollback_clamped` — injected future timestamp is clamped; no backward movement.
+
 ## [1.1.0] — 2026-02-24
 
 ### Added
@@ -39,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-built binaries for Windows x86-64, Linux x86-64, Linux aarch64, macOS x86-64, macOS aarch64 via GitHub Actions release workflow.
 - CI pipeline: `cargo test`, `cargo clippy -D warnings`, `cargo fmt --check`, `cargo audit`.
 
-[Unreleased]: https://github.com/sharma-vikram/pgen/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/sharma-vikram/pgen/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/sharma-vikram/pgen/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/sharma-vikram/pgen/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/sharma-vikram/pgen/releases/tag/v1.0.0

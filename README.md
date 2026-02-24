@@ -4,7 +4,7 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.1.0-green.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-1.1.1-green.svg)](Cargo.toml)
 [![CI](https://github.com/sharma-vikram/pgen/actions/workflows/ci.yml/badge.svg)](https://github.com/sharma-vikram/pgen/actions/workflows/ci.yml)
 
 ## Design & Philosophy

@@ -7,6 +7,7 @@ use anyhow::{Result, bail};
 use clap::{Parser, ValueEnum};
 use rand::{Rng, RngExt, seq::IndexedRandom, seq::SliceRandom};
 use std::io::Write;
+use std::sync::{Mutex, OnceLock};
 use zeroize::Zeroizing;
 
 // Visually unambiguous character sets, stored as ASCII byte slices.
@@ -212,32 +213,100 @@ fn gen_uuid_v4(rng: &mut impl Rng) -> String {
     format_uuid_bytes(&b)
 }
 
-/// Generates a UUID v7 (48-bit Unix ms timestamp + random, RFC 9562).
-///
-/// Layout:
-/// - Bytes 0–5 : 48-bit big-endian millisecond timestamp
-/// - Byte  6   : version nibble (7) | 4 random bits
-/// - Byte  7   : 8 random bits
-/// - Byte  8   : variant (0b10) | 6 random bits
-/// - Bytes 9–15: 56 random bits
-#[must_use]
-fn gen_uuid_v7(rng: &mut impl Rng) -> String {
-    let ms = u64::try_from(
+// ── Monotonic UUIDv7 state ───────────────────────────────────────────────────
+//
+// RFC 9562 §6.2 Method 1: fixed-length dedicated counter in `rand_a` (12 bits).
+//
+// Layout of the 16-byte UUID:
+//   [0..6]  48-bit big-endian millisecond timestamp
+//   [6]     0x70 | counter[11..8]   (version nibble + top 4 bits of counter)
+//   [7]     counter[7..0]           (low 8 bits of counter)
+//   [8]     0x80 | rand[5..0]       (variant bits + 6 random bits)
+//   [9..16] 56 random bits
+//
+// Counter is 12 bits (0x000–0xFFF). On exhaustion within the same millisecond
+// the function spin-waits until the system clock advances.
+//
+// Clock rollback: clamped to `last_ms`; counter keeps incrementing.
+// This avoids panicking in production while preserving local monotonicity.
+
+struct MonotonicState {
+    last_ms: u64,
+    counter: u16, // only low 12 bits are used; upper 4 bits always zero
+}
+
+static MONO_STATE: OnceLock<Mutex<MonotonicState>> = OnceLock::new();
+
+fn mono_state() -> &'static Mutex<MonotonicState> {
+    MONO_STATE.get_or_init(|| {
+        Mutex::new(MonotonicState {
+            last_ms: 0,
+            counter: 0,
+        })
+    })
+}
+
+/// Returns the current Unix timestamp in milliseconds.
+fn now_ms() -> u64 {
+    u64::try_from(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .expect("system clock is before the UNIX epoch")
             .as_millis(),
     )
-    .expect("timestamp overflows u64 (~584 million years from epoch)");
+    .expect("timestamp overflows u64 (~584 million years from epoch)")
+}
 
-    let ms_be = ms.to_be_bytes(); // 8 bytes big-endian; [2..8] = lower 48 bits
-    let rand_tail: [u8; 10] = rng.random();
+/// Core monotonic `UUIDv7` byte generator (RFC 9562 §6.2 Method 1).
+///
+/// For any two calls the returned 16-byte value is strictly greater
+/// (lexicographically) than any previously returned value, provided the system
+/// clock does not roll back by more than 4096 ticks within one millisecond.
+fn next_v7_bytes(rng: &mut impl Rng) -> [u8; 16] {
+    let mut state = mono_state().lock().expect("MonotonicState mutex poisoned");
+
+    let (ms, counter) = loop {
+        let ms = now_ms().max(state.last_ms); // clamp: never go backward
+
+        if ms > state.last_ms {
+            // Clock advanced — reset counter.
+            state.last_ms = ms;
+            state.counter = 0;
+            break (ms, 0u16);
+        }
+
+        // Same millisecond (or clamped rollback).
+        if state.counter < 0x0FFF {
+            state.counter += 1;
+            break (ms, state.counter);
+        }
+
+        // Counter exhausted — release lock and spin-wait for clock to advance.
+        drop(state);
+        std::hint::spin_loop();
+        state = mono_state().lock().expect("MonotonicState mutex poisoned");
+    };
+    drop(state); // release ASAP; don't hold the lock while building the UUID bytes
+    let ms_be = ms.to_be_bytes(); // [2..8] = lower 48 bits
+    let rand_tail: [u8; 8] = rng.random(); // 64 random bits for bytes 8–15
+
     let mut b = [0u8; 16];
-    b[0..6].copy_from_slice(&ms_be[2..8]);
-    b[6..].copy_from_slice(&rand_tail);
-    b[6] = (b[6] & 0x0f) | 0x70; // version 7
-    b[8] = (b[8] & 0x3f) | 0x80; // variant 0b10xxxxxx (RFC 4122)
-    format_uuid_bytes(&b)
+    b[0..6].copy_from_slice(&ms_be[2..8]); // 48-bit timestamp
+    b[6] = 0x70 | ((counter >> 8) as u8); // ver=7, counter[11..8]
+    b[7] = (counter & 0xFF) as u8; // counter[7..0]
+    b[8] = 0x80 | (rand_tail[0] & 0x3F); // variant=10, 6 rand bits
+    b[9..16].copy_from_slice(&rand_tail[1..8]); // 56 random bits
+
+    b
+}
+
+/// Generates a UUID v7 (monotonic, RFC 9562 §6.2 Method 1).
+///
+/// Strict lexicographic ordering is guaranteed across all calls within the
+/// same process, even within the same millisecond (12-bit counter).
+#[must_use]
+fn gen_uuid_v7(rng: &mut impl Rng) -> String {
+    format_uuid_bytes(&next_v7_bytes(rng))
 }
 
 fn format_uuid_bytes(b: &[u8; 16]) -> String {
@@ -666,6 +735,98 @@ mod tests {
             ts_ms <= now_ms && now_ms - ts_ms < 60_000,
             "UUID v7 timestamp {ts_ms} ms is not within 60 s of now ({now_ms} ms)"
         );
+    }
+
+    #[test]
+    fn uuid_v7_monotonic() {
+        // Generate 200 v7 UUIDs rapidly (likely within a single millisecond)
+        // and assert strict lexicographic monotonicity across the batch.
+        let mut rng = rand::rng();
+        let uuids: Vec<String> = (0..200).map(|_| gen_uuid_v7(&mut rng)).collect();
+        for w in uuids.windows(2) {
+            assert!(
+                w[0] < w[1],
+                "UUID v7 monotonicity violated: '{}' >= '{}'",
+                w[0],
+                w[1]
+            );
+        }
+    }
+
+    #[test]
+    fn uuid_v7_monotonic_counter_increments() {
+        // Generates 50 UUIDs in a tight loop (very likely within the same ms window)
+        // and asserts each is strictly greater than the previous as a 128-bit integer.
+        //
+        // Proof path: if same-ms → counter increments → rand_a field increases →
+        // u128 value increases. If ms advances → timestamp field increases → u128
+        // value increases regardless of counter reset.
+        let mut rng = rand::rng();
+        let mut prev: u128 = 0;
+
+        for i in 0..50u32 {
+            let uuid = gen_uuid_v7(&mut rng);
+            let hex: String = uuid.chars().filter(|&c| c != '-').collect();
+            let value = u128::from_str_radix(&hex, 16).expect("UUID hex must parse as u128");
+
+            assert!(
+                value > prev,
+                "UUID [{i}] {uuid} (0x{value:032x}) is not strictly greater \
+                 than previous (0x{prev:032x})"
+            );
+            prev = value;
+        }
+    }
+
+    #[test]
+    fn uuid_v7_clock_rollback_clamped() {
+        // Simulates a clock rollback by injecting a future timestamp directly into
+        // MonotonicState, then asserts:
+        //   (a) All generated UUIDs use the clamped (injected) timestamp, not the
+        //       real clock — proving rollback does not go backward.
+        //   (b) The 5 generated UUIDs are still strictly increasing.
+        //
+        // NOTE: shares global MONO_STATE. If the test suite runs multi-threaded
+        // (`cargo test` default), inject/restore can race with other v7 tests.
+        // Run with `cargo test -- --test-threads=1` if flakiness is observed.
+        let mut rng = rand::rng();
+
+        let future_ms = now_ms() + 5_000;
+        {
+            let mut state = mono_state().lock().expect("mutex poisoned");
+            state.last_ms = future_ms;
+            state.counter = 0;
+        }
+
+        let mut prev: u128 = 0;
+        let mut uuids = Vec::with_capacity(5);
+        for _ in 0..5 {
+            uuids.push(gen_uuid_v7(&mut rng));
+        }
+
+        for (i, uuid) in uuids.iter().enumerate() {
+            let ts_hex = format!("{}{}", &uuid[..8], &uuid[9..13]);
+            let ts_ms = u64::from_str_radix(&ts_hex, 16).expect("timestamp hex must parse");
+            assert_eq!(
+                ts_ms, future_ms,
+                "UUID [{i}] {uuid}: expected clamped timestamp {future_ms} ms, got {ts_ms} ms"
+            );
+
+            let hex: String = uuid.chars().filter(|&c| c != '-').collect();
+            let value = u128::from_str_radix(&hex, 16).expect("UUID hex must parse as u128");
+            assert!(
+                value > prev,
+                "UUID [{i}] {uuid} is not strictly greater than previous"
+            );
+            prev = value;
+        }
+
+        // Restore state so subsequent tests see a clean slate.
+        {
+            let mut state = mono_state().lock().expect("mutex poisoned");
+            state.last_ms = 0;
+            state.counter = 0;
+        }
     }
 
     #[test]
