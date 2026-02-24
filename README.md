@@ -4,10 +4,10 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-green.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-1.1.0-green.svg)](Cargo.toml)
 [![CI](https://github.com/sharma-vikram/pgen/actions/workflows/ci.yml/badge.svg)](https://github.com/sharma-vikram/pgen/actions/workflows/ci.yml)
 
-## Design & Philosophys
+## Design & Philosophy
 
 - **CSPRNG**: Uses `ChaCha12` (via `rand`) seeded from the OS entropy source.
 - **Memory Safety**: All intermediate buffers are zeroized (wiped) from memory using the `zeroize` crate.
@@ -16,9 +16,17 @@
 
 ## Installation
 
-### Pre-built binary (Windows x86-64)
+### Pre-built binaries
 
-Download the latest `pgen.exe` from the [Releases](../../releases) page and place it anywhere on your `PATH`.
+Download the latest release for your platform from the [Releases](../../releases) page and place it anywhere on your `PATH`:
+
+| Platform | File |
+|----------|------|
+| Windows x86-64 | `pgen-vX.Y.Z-x86_64-pc-windows-msvc.zip` |
+| Linux x86-64 | `pgen-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux aarch64 | `pgen-vX.Y.Z-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS x86-64 | `pgen-vX.Y.Z-x86_64-apple-darwin.tar.gz` |
+| macOS Apple Silicon | `pgen-vX.Y.Z-aarch64-apple-darwin.tar.gz` |
 
 ### Build from source
 
@@ -56,8 +64,10 @@ pgen --length <LENGTH> [OPTIONS]
 | `--number` | `-n` | Include digits: `2–9` | off |
 | `--no-upper` | | Exclude uppercase letters | |
 | `--no-lower` | | Exclude lowercase letters | |
-| `--count <N>` | `-c` | Number of passwords to generate (max: 10,000) | `1` |
-| `--verbose` | `-v` | Print entropy estimate and pool size to stderr | off |
+| `--count <N>` | `-c` | Number of items to generate (max: 10,000) | `1` |
+| `--verbose` | `-v` | Print entropy / pool size (password) or UUID version info to stderr | off |
+| `--uuid` | `-u` | Generate a UUID instead of a password (defaults to v4) | |
+| `--uuid-version <VER>` | | UUID version to generate: `v4` or `v7`; implies `--uuid` | |
 | `--help` | `-h` | Print help | |
 | `--version` | `-V` | Print version | |
 
@@ -109,6 +119,26 @@ pgen --length 6 --symbol
 ```
 ```
 Error: --length 6 is below the minimum of 10.
+```
+
+**Generate a UUID v4:**
+```
+pgen --uuid
+```
+```
+f47ac10b-58cc-4372-a567-0e02b2c3d479
+```
+
+**Generate 5 UUID v7s (timestamp-sortable):**
+```
+pgen -u --uuid-version v7 -c 5
+```
+```
+019c9021-822e-7181-a8db-9c63b8bb621e
+019c9021-822f-7730-94a5-e770f2bd211b
+019c9021-8230-7786-9f49-cd836b2c963a
+019c9021-8231-7773-98c6-df0b830e4926
+019c9021-8232-7541-b1d3-4f2a9e8c1b05
 ```
 
 ---
