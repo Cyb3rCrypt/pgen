@@ -103,7 +103,9 @@ struct Config {
     length: usize,
     count: usize,
     required_sets: Vec<&'static [u8]>,
-    pool: Vec<u8>,
+    // Zeroizing ensures pool bytes are cleared on drop. The pool is not
+    // secret, but wiping it is consistent with the tool's security posture.
+    pool: Zeroizing<Vec<u8>>,
     verbose: bool,
 }
 
@@ -169,7 +171,7 @@ impl TryFrom<&Args> for Config {
             length,
             count,
             required_sets,
-            pool,
+            pool: Zeroizing::new(pool),
             verbose: args.verbose,
         })
     }
