@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-02-25
+
+### Added
+
+- `--typeid` flag: generate a [TypeID](https://github.com/jetpack-io/typeid) —
+  a type-safe, K-sortable identifier with a lowercase ASCII prefix and a
+  Crockford base32-encoded UUID v7 suffix (spec v0.3.0).
+- `--typeid-prefix <PREFIX>`: optional prefix for the generated TypeID
+  (1–63 lowercase ASCII letters/underscores, not starting or ending with `_`).
+  When omitted, only the bare 26-character base32 suffix is printed.
+
 ## [1.1.1] — 2026-02-25
 
 ### Fixed
@@ -61,7 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-built binaries for Windows x86-64, Linux x86-64, Linux aarch64, macOS x86-64, macOS aarch64 via GitHub Actions release workflow.
 - CI pipeline: `cargo test`, `cargo clippy -D warnings`, `cargo fmt --check`, `cargo audit`.
 
-[Unreleased]: https://github.com/sharma-vikram/pgen/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/sharma-vikram/pgen/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/sharma-vikram/pgen/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/sharma-vikram/pgen/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/sharma-vikram/pgen/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/sharma-vikram/pgen/releases/tag/v1.0.0

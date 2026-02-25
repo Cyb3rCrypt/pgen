@@ -17,6 +17,14 @@ const L_CHARS: &[u8] = b"abcdefghjkmnpqrstuvwxyz";
 const S_CHARS: &[u8] = b"!@#$%^&*-_+=~()[]{};:,.?/";
 const N_CHARS: &[u8] = b"23456789";
 
+// ── TypeID base32 encoding ──────────────────────────────────────────────────
+//
+// Spec: https://github.com/jetify-com/typeid (v0.3.0)
+//
+// Crockford base32 alphabet, lowercase. Index 0 = '0', index 31 = 'z'.
+// Characters 'i', 'l', 'o', 'u' are absent (visually ambiguous).
+const TYPEID_ALPHABET: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
+
 const MIN_LENGTH: usize = 10;
 const MAX_LENGTH: usize = 4096;
 const MAX_COUNT: usize = 10_000;
@@ -45,25 +53,25 @@ struct Args {
         short,
         long,
         value_name = "LENGTH",
-        required_unless_present_any = ["uuid", "uuid_version"],
-        conflicts_with_all = ["uuid", "uuid_version"]
+        required_unless_present_any = ["uuid", "uuid_version", "typeid", "typeid_prefix"],
+        conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix"]
     )]
     length: Option<usize>,
 
     /// Exclude uppercase letters
-    #[arg(long, conflicts_with_all = ["uuid", "uuid_version"])]
+    #[arg(long, conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix"])]
     no_upper: bool,
 
     /// Exclude lowercase letters
-    #[arg(long, conflicts_with_all = ["uuid", "uuid_version"])]
+    #[arg(long, conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix"])]
     no_lower: bool,
 
     /// Include symbols: !@#$%^&*-_+=~()[]{};:,.?/
-    #[arg(short, long, conflicts_with_all = ["uuid", "uuid_version"])]
+    #[arg(short, long, conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix"])]
     symbol: bool,
 
     /// Include digits 2-9 (visually unambiguous)
-    #[arg(short, long, conflicts_with_all = ["uuid", "uuid_version"])]
+    #[arg(short, long, conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix"])]
     number: bool,
 
     /// Number of items to generate (max: 10 000)
@@ -81,6 +89,14 @@ struct Args {
     /// UUID version to generate
     #[arg(long, value_enum)]
     uuid_version: Option<UuidVersion>,
+
+    /// Generate a `TypeID` (`UUIDv7` encoded as base32 with a type prefix)
+    #[arg(long, conflicts_with_all = ["uuid", "uuid_version"])]
+    typeid: bool,
+
+    /// Type prefix for the `TypeID` (max 63 lowercase [a-z_] chars); implies --typeid
+    #[arg(long, value_name = "PREFIX", conflicts_with_all = ["uuid", "uuid_version"])]
+    typeid_prefix: Option<String>,
 }
 
 struct Config {
@@ -332,6 +348,80 @@ fn format_uuid_bytes(b: &[u8; 16]) -> String {
     )
 }
 
+// ── TypeID encoding / validation / generation ────────────────────────────────
+
+/// Encodes a 16-byte (128-bit) UUID into the 26-character `TypeID` base32 suffix.
+///
+/// Two zero bits are prepended, giving 130 bits split into 26 × 5-bit groups.
+/// The first output character is always ≤ `'7'` (the top 2 bits are zero).
+///
+/// # Panics
+/// Never — all arithmetic is on fixed-size arrays with known bounds.
+#[must_use]
+fn encode_base32(uuid: &[u8; 16]) -> [u8; 26] {
+    let n = u128::from_be_bytes(*uuid);
+    // Group i (0 = leftmost): extract 5 bits starting at bit position 125 - 5*i.
+    // i=0  → shift 125 → top 5 bits of the 130-bit value (top 2 always zero → ≤ 7).
+    // i=25 → shift 0   → bottom 5 bits of n.
+    let mut out = [0u8; 26];
+    for (i, out_byte) in out.iter_mut().enumerate() {
+        let shift = 125u32 - u32::try_from(5 * i).unwrap();
+        let index = usize::try_from((n >> shift) & 0x1F).unwrap();
+        *out_byte = TYPEID_ALPHABET[index];
+    }
+    out
+}
+
+/// Validates a `TypeID` prefix against the spec (v0.3.0).
+///
+/// Returns `Ok(())` if the prefix is valid, or a descriptive `Err` otherwise.
+fn validate_prefix(prefix: &str) -> Result<()> {
+    if prefix.len() > 63 {
+        bail!(
+            "TypeID prefix is {} characters; maximum is 63.",
+            prefix.len()
+        );
+    }
+    if prefix.is_empty() {
+        return Ok(());
+    }
+    if !prefix.starts_with(|c: char| c.is_ascii_lowercase()) {
+        bail!("TypeID prefix {prefix:?} must start with a lowercase ASCII letter [a-z].");
+    }
+    if !prefix.ends_with(|c: char| c.is_ascii_lowercase()) {
+        bail!("TypeID prefix {prefix:?} must end with a lowercase ASCII letter [a-z].");
+    }
+    if let Some(bad) = prefix.chars().find(|&c| !matches!(c, 'a'..='z' | '_')) {
+        bail!(
+            "TypeID prefix {prefix:?} contains invalid character {bad:?}; \
+             only lowercase ASCII letters and underscores are permitted."
+        );
+    }
+    Ok(())
+}
+
+/// Generates a `TypeID` with the given prefix and a fresh monotonic `UUIDv7` suffix.
+///
+/// Output format: `prefix_suffix` (26-char base32) or bare suffix when prefix is empty.
+///
+/// # Errors
+/// Returns `Err` if `prefix` fails validation (see [`validate_prefix`]).
+#[allow(dead_code)]
+fn gen_typeid(prefix: &str, rng: &mut impl Rng) -> Result<String> {
+    validate_prefix(prefix)?;
+    let uuid_bytes = next_v7_bytes(rng);
+    let suffix = encode_base32(&uuid_bytes);
+    // TYPEID_ALPHABET is pure ASCII, so the output is always valid UTF-8.
+    let suffix_str =
+        std::str::from_utf8(&suffix).expect("base32 suffix is always valid ASCII/UTF-8");
+    let typeid = if prefix.is_empty() {
+        suffix_str.to_owned()
+    } else {
+        format!("{prefix}_{suffix_str}")
+    };
+    Ok(typeid)
+}
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("Error: {e}");
@@ -341,7 +431,9 @@ fn main() {
 
 fn run() -> Result<()> {
     let args = Args::parse();
-    if args.uuid || args.uuid_version.is_some() {
+    if args.typeid || args.typeid_prefix.is_some() {
+        run_typeid(&args)
+    } else if args.uuid || args.uuid_version.is_some() {
         run_uuid(&args)
     } else {
         run_pass(&args)
@@ -368,11 +460,10 @@ fn run_pass(args: &Args) -> Result<()> {
 
     for _ in 0..config.count {
         let bytes = pgen(config.length, &config.required_sets, &config.pool, &mut rng);
-
         handle.write_all(&bytes)?;
         handle.write_all(b"\n")?;
-        handle.flush()?;
     }
+    handle.flush()?;
 
     Ok(())
 }
@@ -406,8 +497,51 @@ fn run_uuid(args: &Args) -> Result<()> {
         };
         handle.write_all(uuid.as_bytes())?;
         handle.write_all(b"\n")?;
-        handle.flush()?;
     }
+    handle.flush()?;
+
+    Ok(())
+}
+
+fn run_typeid(args: &Args) -> Result<()> {
+    let count = match args.count {
+        None => 1,
+        Some(0) => bail!("--count must be at least 1."),
+        Some(v) if v > MAX_COUNT => bail!("--count {v} exceeds the maximum of {MAX_COUNT}."),
+        Some(v) => v,
+    };
+
+    let prefix = args.typeid_prefix.as_deref().unwrap_or("");
+
+    // Validate once up-front before generating any output.
+    validate_prefix(prefix)?;
+
+    if args.verbose {
+        if prefix.is_empty() {
+            eprintln!("TypeID: no prefix (bare suffix)");
+        } else {
+            eprintln!("TypeID prefix: {prefix}");
+        }
+    }
+
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+    let mut rng = rand::rng();
+
+    for _ in 0..count {
+        // Prefix already validated; encode_base32 + next_v7_bytes are infallible.
+        let uuid_bytes = next_v7_bytes(&mut rng);
+        let suffix = encode_base32(&uuid_bytes);
+        let suffix_str =
+            std::str::from_utf8(&suffix).expect("base32 suffix is always valid ASCII/UTF-8");
+        if !prefix.is_empty() {
+            handle.write_all(prefix.as_bytes())?;
+            handle.write_all(b"_")?;
+        }
+        handle.write_all(suffix_str.as_bytes())?;
+        handle.write_all(b"\n")?;
+    }
+    handle.flush()?;
 
     Ok(())
 }
@@ -435,6 +569,8 @@ mod tests {
             verbose: false,
             uuid: false,
             uuid_version: None,
+            typeid: false,
+            typeid_prefix: None,
         };
         assert!(Config::try_from(&args).is_err());
     }
@@ -451,6 +587,8 @@ mod tests {
             verbose: false,
             uuid: false,
             uuid_version: None,
+            typeid: false,
+            typeid_prefix: None,
         };
         assert!(Config::try_from(&args).is_err());
     }
@@ -467,6 +605,8 @@ mod tests {
             verbose: false,
             uuid: false,
             uuid_version: None,
+            typeid: false,
+            typeid_prefix: None,
         };
         assert!(Config::try_from(&args).is_err());
     }
@@ -483,6 +623,8 @@ mod tests {
             verbose: false,
             uuid: false,
             uuid_version: None,
+            typeid: false,
+            typeid_prefix: None,
         };
         assert!(Config::try_from(&args).is_err());
     }
@@ -499,6 +641,8 @@ mod tests {
             verbose: false,
             uuid: false,
             uuid_version: None,
+            typeid: false,
+            typeid_prefix: None,
         };
         assert!(Config::try_from(&args).is_err());
     }
@@ -515,6 +659,8 @@ mod tests {
             verbose: false,
             uuid: false,
             uuid_version: None,
+            typeid: false,
+            typeid_prefix: None,
         };
         assert!(Config::try_from(&args).is_ok());
     }
@@ -684,6 +830,90 @@ mod tests {
         let version = parts[2].chars().next().unwrap();
         let variant = parts[3].chars().next().unwrap();
         (version, variant)
+    }
+
+    // ── TypeID tests ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn typeid_empty_prefix_no_separator() {
+        let mut rng = make_test_rng();
+        let id = gen_typeid("", &mut rng).expect("empty prefix must be valid");
+        assert_eq!(id.len(), 26, "bare typeid must be 26 chars, got: {id}");
+        assert!(
+            !id.contains('_'),
+            "bare typeid must not contain underscore, got: {id}"
+        );
+    }
+
+    #[test]
+    fn typeid_format_prefix_separator_suffix() {
+        let mut rng = make_test_rng();
+        let id = gen_typeid("user", &mut rng).expect("valid prefix");
+        assert_eq!(
+            id.len(),
+            31,
+            "typeid with 'user' prefix must be 31 chars, got: {id}"
+        );
+        assert!(
+            id.starts_with("user_"),
+            "must start with 'user_', got: {id}"
+        );
+        let suffix = &id[5..];
+        assert_eq!(suffix.len(), 26, "suffix must be 26 chars");
+    }
+
+    #[test]
+    fn typeid_suffix_chars_in_alphabet() {
+        let mut rng = make_test_rng();
+        let id = gen_typeid("test", &mut rng).expect("valid prefix");
+        let suffix = &id[5..]; // skip "test_"
+        for ch in suffix.chars() {
+            assert!(
+                TYPEID_ALPHABET.contains(&(ch as u8)),
+                "suffix char {ch:?} is not in the TypeID alphabet"
+            );
+        }
+    }
+
+    #[test]
+    fn typeid_first_suffix_char_le_7() {
+        let mut rng = rand::rng();
+        for _ in 0..50 {
+            let id = gen_typeid("chk", &mut rng).expect("valid prefix");
+            let first = id.chars().nth(4).expect("suffix must exist"); // "chk_X..."
+            assert!(
+                first <= '7',
+                "first suffix char {first:?} exceeds '7' — overflow guard failed"
+            );
+        }
+    }
+
+    #[test]
+    fn typeid_invalid_prefix_rejected() {
+        let mut rng = make_test_rng();
+        let long = "a".repeat(64);
+        let cases = ["PREFIX", "12345", "_prefix", "prefix_", long.as_str()];
+        for bad in &cases {
+            assert!(
+                gen_typeid(bad, &mut rng).is_err(),
+                "expected error for invalid prefix {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn typeid_monotonic_suffix_ordering() {
+        let mut rng = rand::rng();
+        let mut prev = String::new();
+        for i in 0..50u32 {
+            let id = gen_typeid("ord", &mut rng).expect("valid prefix");
+            let suffix = id[4..].to_owned(); // skip "ord_"
+            assert!(
+                suffix > prev,
+                "suffix [{i}] {suffix} is not > previous {prev}"
+            );
+            prev = suffix;
+        }
     }
 
     #[test]

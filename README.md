@@ -4,7 +4,7 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.1.1-green.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-1.2.0-green.svg)](Cargo.toml)
 [![CI](https://github.com/sharma-vikram/pgen/actions/workflows/ci.yml/badge.svg)](https://github.com/sharma-vikram/pgen/actions/workflows/ci.yml)
 
 ## Design & Philosophy
@@ -68,6 +68,8 @@ pgen --length <LENGTH> [OPTIONS]
 | `--verbose` | `-v` | Print entropy / pool size (password) or UUID version info to stderr | off |
 | `--uuid` | `-u` | Generate a UUID instead of a password (defaults to v4) | |
 | `--uuid-version <VER>` | | UUID version to generate: `v4` or `v7`; implies `--uuid` | |
+| `--typeid` | | Generate a TypeID (spec v0.3.0): lowercase prefix + Crockford base32 UUID v7 suffix | |
+| `--typeid-prefix <PREFIX>` | | Prefix for the TypeID (1–63 lowercase letters/underscores); implies `--typeid` | |
 | `--help` | `-h` | Print help | |
 | `--version` | `-V` | Print version | |
 
@@ -139,6 +141,24 @@ pgen -u --uuid-version v7 -c 5
 019c9021-8230-7786-9f49-cd836b2c963a
 019c9021-8231-7773-98c6-df0b830e4926
 019c9021-8232-7541-b1d3-4f2a9e8c1b05
+```
+
+**Generate a TypeID with a prefix:**
+```
+pgen --typeid-prefix user
+```
+```
+user_01h455vb4pex5vsknk084sn02q
+```
+
+**Generate 3 TypeIDs with no prefix (bare suffix):**
+```
+pgen --typeid --count 3
+```
+```
+01h455vb4pex5vsknk084sn02q
+01h455vb4r7nd5w8zeyk7j3q24
+01h455vb4s0xr8ftx09c4t1k6e
 ```
 
 ---
