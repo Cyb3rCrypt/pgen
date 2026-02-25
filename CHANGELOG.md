@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] — 2026-02-25
+
+### Fixed
+
+- UUID v7 counter now seeds with 9 random bits (0–511) on millisecond advance per RFC 9562 
+  §6.2 recommendation, leaving 3,584 headroom slots before exhaustion. Previously used 0,
+  deviating from the RFC guidance.
+- `next_v7_bytes` spin-loop now tracks cycle count with `MAX_SPIN_CYCLES = 50` bound and
+  `assert!` panic, preventing indefinite hang if system clock is frozen (VM suspend, broken NTP).
+- UUID v7 tests serialize `MONO_STATE` access via `V7_LOCK: Mutex<()>` guard, eliminating
+  race conditions in parallel test execution beyond the CI's `--test-threads=1`.
+- `uuid_v7_clock_rollback_clamped` test now uses `MonotonicStateReset` Drop guard to zero
+  `MONO_STATE` even if assertions panic, preventing test pollution.
+- Entropy calculation in `run_pass --verbose` now uses accurate two-phase formula
+  (per-set bits + pool bits) instead of naïve pool-only calculation, eliminating ~10 bits
+  of overstatement.
+
+### Changed
+
+- `format_uuid_bytes` optimized: replaced `format!` macro with direct hex loop using
+  `const HEX: &[u8; 16]` into `String::with_capacity(36)`, eliminating ~10k allocations
+  at `--count 10000`.
+- `run_typeid` zero-alloc path: writes base32 bytes directly to stdout via 
+  `handle.write_all()`, bypassing per-ID `String` allocation (~10k fewer allocs at 
+  `--count 10000`). Function `gen_typeid` retained for tests, marked `#[allow(dead_code)]`.
+
+### Docs
+
+- Added comment in `run_pass` clarifying that `Zeroizing` covers only in-process buffer;
+  bytes passed to `write_all()` enter kernel I/O buffers outside our control.
+- Expanded `MonotonicState` block comment documenting 12-bit counter method, RFC 9562 §6.2
+  compliance, clock clamping, spin-loop bounds, and mutex-poison assumption; clarified
+  design is appropriate only for single-threaded CLI binary.
+- Updated `run_pass` entropy comment explaining two-phase calculation (mandatory placement +
+  uniform fill) to match accurate bit computation.
+
 ## [1.2.1] — 2026-02-25
 
 ### Fixed
@@ -32,14 +68,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `format_uuid_bytes` refactored from 16 individual byte arguments to 5 RFC 4122
   named groups (`p0`–`p4`), matching the standard `time_low / time_mid /
   time_hi_and_version / clock_seq / node` field layout (P2).
+- UUID formatting optimization: replaced `format!` macro with direct hex loop using
+  `const HEX: &[u8; 16]` into `String::with_capacity(36)`, eliminating ~10k allocations
+  at `--count 10000` (P3).
+- TypeID generation zero-alloc path: `run_typeid` now writes base32 bytes directly to
+  stdout via `handle.write_all()`, bypassing per-ID `String` allocation and achieving
+  ~10k fewer allocations at `--count 10000` (P4). Function `gen_typeid` is retained
+  for test usage and marked `#[allow(dead_code)]`.
 
 ### Docs
 
 - Added comment in `run_pass` noting that `Zeroizing` covers only the in-process
   buffer; bytes written to `write_all()` enter kernel I/O buffers outside our
   control (S1).
-- Added block comment on `MonotonicState` documenting the mutex-poison assumption
-  and that this design is appropriate only for a single-threaded CLI binary (S3).
+- Added block comment on `MonotonicState` documenting the 12-bit counter method,
+  RFC 9562 §6.2 compliance, clock clamping behavior, and the mutex-poison assumption;
+  documented that this design is appropriate only for a single-threaded CLI binary (S2).
+- Entropy calculation formula updated in comments: clarified two-phase strategy
+  (mandatory placement per set + uniform fill from combined pool) to reflect
+  accurate `log2` computation instead of pool-only naïve formula (S3).
 
 ## [1.2.0] — 2026-02-25
 
@@ -104,7 +151,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-built binaries for Windows x86-64, Linux x86-64, Linux aarch64, macOS x86-64, macOS aarch64 via GitHub Actions release workflow.
 - CI pipeline: `cargo test`, `cargo clippy -D warnings`, `cargo fmt --check`, `cargo audit`.
 
-[Unreleased]: https://github.com/sharma-vikram/pgen/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/sharma-vikram/pgen/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/sharma-vikram/pgen/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/sharma-vikram/pgen/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/sharma-vikram/pgen/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/sharma-vikram/pgen/compare/v1.1.0...v1.1.1

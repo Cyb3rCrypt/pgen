@@ -235,8 +235,11 @@ fn gen_uuid_v4(rng: &mut impl Rng) -> String {
 //   [8]     0x80 | rand[5..0]       (variant bits + 6 random bits)
 //   [9..16] 56 random bits
 //
-// Counter is 12 bits (0x000–0xFFF). On exhaustion within the same millisecond
-// the function spin-waits until the system clock advances.
+// Counter is 12 bits (0x000–0xFFF). On each millisecond advance the counter
+// is seeded with 9 random bits (0x000–0x1FF), leaving 3 584 headroom slots
+// before exhaustion (RFC 9562 §6.2 recommendation). On exhaustion within the
+// same millisecond the function spin-waits (bounded to ~500 ms) until the
+// system clock advances.
 //
 // Clock rollback: clamped to `last_ms`; counter keeps incrementing.
 // This avoids panicking in production while preserving local monotonicity.
@@ -278,19 +281,32 @@ fn now_ms() -> u64 {
 /// For any two calls the returned 16-byte value is strictly greater
 /// (lexicographically) than any previously returned value. Clock rollbacks are
 /// clamped; counter exhaustion within the same millisecond causes the caller
-/// to spin-wait until the clock advances, so monotonicity is unconditional.
+/// to spin-wait (bounded to ~500 ms) until the clock advances, so monotonicity
+/// is unconditional.
+///
+/// # Panics
+/// Panics if the system clock does not advance within ~500 ms (50 sleep
+/// cycles). This indicates a frozen or suspended clock and is unrecoverable
+/// for a monotonic generator.
 fn next_v7_bytes(rng: &mut impl Rng) -> [u8; 16] {
+    // 50 sleep cycles × (10 000 spins + 100 µs sleep each) ≈ 500 ms total.
+    // A real clock must advance within this window; if not, the system is broken.
+    const MAX_SPIN_CYCLES: u32 = 50;
+
     let mut state = mono_state().lock().expect("MonotonicState mutex poisoned");
     let mut spins: u32 = 0;
+    let mut cycles: u32 = 0;
 
     let (ms, counter) = loop {
         let ms = now_ms().max(state.last_ms); // clamp: never go backward
 
         if ms > state.last_ms {
-            // Clock advanced — reset counter.
+            // Clock advanced — seed counter randomly per RFC 9562 §6.2.
+            // 9 random bits (0–511) leaves 3 584 headroom slots before
+            // counter exhaustion within a single millisecond.
             state.last_ms = ms;
-            state.counter = 0;
-            break (ms, 0u16);
+            state.counter = rng.random::<u16>() & 0x01FF;
+            break (ms, state.counter);
         }
 
         // Same millisecond (or clamped rollback).
@@ -309,6 +325,12 @@ fn next_v7_bytes(rng: &mut impl Rng) -> [u8; 16] {
         } else {
             std::thread::sleep(std::time::Duration::from_micros(100));
             spins = 0;
+            cycles += 1;
+            assert!(
+                cycles < MAX_SPIN_CYCLES,
+                "UUIDv7 counter exhausted: clock did not advance within \
+                 {MAX_SPIN_CYCLES} sleep cycles (~500 ms)"
+            );
         }
         state = mono_state().lock().expect("MonotonicState mutex poisoned");
     };
@@ -336,14 +358,19 @@ fn gen_uuid_v7(rng: &mut impl Rng) -> String {
 }
 
 fn format_uuid_bytes(b: &[u8; 16]) -> String {
-    // Each group maps directly to an RFC 4122 UUID field:
-    //   time_low(4B) - time_mid(2B) - time_hi_and_version(2B) - clock_seq(2B) - node(6B)
-    let p0 = u32::from_be_bytes([b[0], b[1], b[2], b[3]]);
-    let p1 = u16::from_be_bytes([b[4], b[5]]);
-    let p2 = u16::from_be_bytes([b[6], b[7]]);
-    let p3 = u16::from_be_bytes([b[8], b[9]]);
-    let p4 = u64::from_be_bytes([0, 0, b[10], b[11], b[12], b[13], b[14], b[15]]);
-    format!("{p0:08x}-{p1:04x}-{p2:04x}-{p3:04x}-{p4:012x}")
+    // Direct hex encoding into a pre-sized buffer. A UUID string is always
+    // exactly 36 bytes (32 hex digits + 4 hyphens). Avoids the `format!`
+    // machinery and its internal reallocation; measurable at --count 10 000.
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(36);
+    for (i, &byte) in b.iter().enumerate() {
+        if matches!(i, 4 | 6 | 8 | 10) {
+            out.push('-');
+        }
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0F) as usize] as char);
+    }
+    out
 }
 
 // ── TypeID encoding / validation / generation ────────────────────────────────
@@ -405,6 +432,10 @@ fn validate_prefix(prefix: &str) -> Result<()> {
 ///
 /// # Errors
 /// Returns `Err` if `prefix` fails validation (see [`validate_prefix`]).
+///
+/// # Note
+/// Used by unit tests; `run_typeid` bypasses this to avoid per-ID heap allocation.
+#[allow(dead_code)]
 fn gen_typeid(prefix: &str, rng: &mut impl Rng) -> Result<String> {
     validate_prefix(prefix)?;
     let uuid_bytes = next_v7_bytes(rng);
@@ -451,8 +482,19 @@ fn run_pass(args: &Args) -> Result<()> {
     let config = Config::try_from(args)?;
 
     if config.verbose {
+        // Accurate entropy: phase-1 draws MIN_PER_SET chars from each required
+        // set (smaller alphabet); phase-2 fills the rest from the full pool.
+        // Reporting pool-only entropy overstates by up to ~10 bits.
         #[allow(clippy::cast_precision_loss)]
-        let entropy_bits = (config.pool.len() as f64).log2() * config.length as f64;
+        let phase1: f64 = config
+            .required_sets
+            .iter()
+            .map(|s| MIN_PER_SET as f64 * (s.len() as f64).log2())
+            .sum();
+        let remaining = config.length - config.required_sets.len() * MIN_PER_SET;
+        #[allow(clippy::cast_precision_loss)]
+        let phase2 = remaining as f64 * (config.pool.len() as f64).log2();
+        let entropy_bits = phase1 + phase2;
         eprintln!(
             "Entropy: ~{:.1} bits (pool: {}, length: {})",
             entropy_bits,
@@ -529,9 +571,18 @@ fn run_typeid(args: &Args) -> Result<()> {
     let mut handle = stdout.lock();
     let mut rng = rand::rng();
 
+    // Zero-alloc hot path: write prefix, separator, and raw base32 suffix
+    // directly to the stdout handle — no per-ID String allocation.
+    // gen_typeid is used by tests and validates independently; here we
+    // skip it since prefix is already validated above.
+    let prefix_bytes = prefix.as_bytes();
     for _ in 0..count {
-        let id = gen_typeid(prefix, &mut rng)?;
-        handle.write_all(id.as_bytes())?;
+        let suffix = encode_base32(&next_v7_bytes(&mut rng));
+        if !prefix_bytes.is_empty() {
+            handle.write_all(prefix_bytes)?;
+            handle.write_all(b"_")?;
+        }
+        handle.write_all(&suffix)?;
         handle.write_all(b"\n")?;
     }
     handle.flush()?;
@@ -551,6 +602,21 @@ mod tests {
     // duration of the test. This serialises them against each other without
     // requiring an external crate, matching what `#[serial]` would provide.
     static V7_LOCK: Mutex<()> = Mutex::new(());
+
+    /// RAII guard that zeros `MONO_STATE` on drop, even when the test panics.
+    /// Use in any test that injects synthetic timestamps into `MonotonicState`.
+    struct MonotonicStateReset;
+
+    impl Drop for MonotonicStateReset {
+        fn drop(&mut self) {
+            // Use `lock()` not `expect()`: the mutex may be poisoned if the
+            // test panicked while holding it; silently skip in that case.
+            if let Ok(mut s) = mono_state().lock() {
+                s.last_ms = 0;
+                s.counter = 0;
+            }
+        }
+    }
 
     fn make_test_rng() -> StdRng {
         StdRng::seed_from_u64(42)
@@ -834,7 +900,70 @@ mod tests {
     // ── TypeID tests ──────────────────────────────────────────────────────────
 
     #[test]
+    fn character_sets_are_disjoint() {
+        // Unconditional version of the debug_assertions check in Config.
+        // Catches accidental overlap if character set constants are modified.
+        let mut pool: Vec<u8> = [U_CHARS, L_CHARS, S_CHARS, N_CHARS]
+            .iter()
+            .flat_map(|s| s.iter().copied())
+            .collect();
+        pool.sort_unstable();
+        assert!(
+            pool.windows(2).all(|w| w[0] != w[1]),
+            "character sets contain overlapping bytes"
+        );
+    }
+
+    // ── TypeID encoding: deterministic spec vectors ─────────────────────────
+
+    #[test]
+    fn typeid_encode_known_vectors() {
+        // Vector 1: From official jetify-com/typeid README
+        // `typeid decode prefix_01h2xcejqtf2nbrexx3vqjhp41`
+        //  → uuid: 0188bac7-4afa-78aa-bc3b-bd1eef28d881
+        let uuid1: [u8; 16] = [
+            0x01, 0x88, 0xba, 0xc7, 0x4a, 0xfa, 0x78, 0xaa, 0xbc, 0x3b, 0xbd, 0x1e, 0xef, 0x28,
+            0xd8, 0x81,
+        ];
+        let enc1 = encode_base32(&uuid1);
+        assert_eq!(
+            std::str::from_utf8(&enc1).unwrap(),
+            "01h2xcejqtf2nbrexx3vqjhp41"
+        );
+
+        // Vector 2: All-zeros UUID → all-zeros suffix
+        let uuid2: [u8; 16] = [0u8; 16];
+        let enc2 = encode_base32(&uuid2);
+        assert_eq!(
+            std::str::from_utf8(&enc2).unwrap(),
+            "00000000000000000000000000"
+        );
+
+        // Vector 3: Max UUID → max suffix (spec §Base32 Encoding)
+        let uuid3: [u8; 16] = [0xFF; 16];
+        let enc3 = encode_base32(&uuid3);
+        assert_eq!(
+            std::str::from_utf8(&enc3).unwrap(),
+            "7zzzzzzzzzzzzzzzzzzzzzzzzz"
+        );
+
+        // Vector 4: Sequential bytes (from Go reference lib)
+        // UUID 00010203-0405-0607-0809-0a0b0c0d0e0f
+        //  → suffix: 00041061050r3gg28a1c60t3gf
+        let uuid4: [u8; 16] = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+            0x0e, 0x0f,
+        ];
+        let enc4 = encode_base32(&uuid4);
+        assert_eq!(
+            std::str::from_utf8(&enc4).unwrap(),
+            "00041061050r3gg28a1c60t3gf"
+        );
+    }
+
+    #[test]
     fn typeid_empty_prefix_no_separator() {
+        let _v7 = V7_LOCK.lock().unwrap();
         let mut rng = make_test_rng();
         let id = gen_typeid("", &mut rng).expect("empty prefix must be valid");
         assert_eq!(id.len(), 26, "bare typeid must be 26 chars, got: {id}");
@@ -846,6 +975,7 @@ mod tests {
 
     #[test]
     fn typeid_format_prefix_separator_suffix() {
+        let _v7 = V7_LOCK.lock().unwrap();
         let mut rng = make_test_rng();
         let id = gen_typeid("user", &mut rng).expect("valid prefix");
         assert_eq!(
@@ -863,6 +993,7 @@ mod tests {
 
     #[test]
     fn typeid_suffix_chars_in_alphabet() {
+        let _v7 = V7_LOCK.lock().unwrap();
         let mut rng = make_test_rng();
         let id = gen_typeid("test", &mut rng).expect("valid prefix");
         let suffix = &id[5..]; // skip "test_"
@@ -876,6 +1007,7 @@ mod tests {
 
     #[test]
     fn typeid_first_suffix_char_le_7() {
+        let _v7 = V7_LOCK.lock().unwrap();
         let mut rng = rand::rng();
         for _ in 0..50 {
             let id = gen_typeid("chk", &mut rng).expect("valid prefix");
@@ -889,6 +1021,7 @@ mod tests {
 
     #[test]
     fn typeid_invalid_prefix_rejected() {
+        let _v7 = V7_LOCK.lock().unwrap();
         let mut rng = make_test_rng();
         let long = "a".repeat(64);
         let cases = ["PREFIX", "12345", "_prefix", "prefix_", long.as_str()];
@@ -902,6 +1035,7 @@ mod tests {
 
     #[test]
     fn typeid_monotonic_suffix_ordering() {
+        let _v7 = V7_LOCK.lock().unwrap();
         let mut rng = rand::rng();
         let mut prev = String::new();
         for i in 0..50u32 {
@@ -1028,6 +1162,9 @@ mod tests {
             state.counter = 0;
         }
 
+        // RAII: resets MONO_STATE to zero on exit, even if assertions panic.
+        let _reset = MonotonicStateReset;
+
         let mut prev: u128 = 0;
         let mut uuids = Vec::with_capacity(5);
         for _ in 0..5 {
@@ -1049,13 +1186,6 @@ mod tests {
                 "UUID [{i}] {uuid} is not strictly greater than previous"
             );
             prev = value;
-        }
-
-        // Restore state so subsequent tests see a clean slate.
-        {
-            let mut state = mono_state().lock().expect("mutex poisoned");
-            state.last_ms = 0;
-            state.counter = 0;
         }
     }
 
