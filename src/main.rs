@@ -289,12 +289,13 @@ fn now_ms() -> u64 {
 /// cycles). This indicates a frozen or suspended clock and is unrecoverable
 /// for a monotonic generator.
 fn next_v7_bytes(rng: &mut impl Rng) -> [u8; 16] {
-    let mut state = mono_state().lock().expect("MonotonicState mutex poisoned");
-    let mut spins: u32 = 0;
-    let mut cycles: u32 = 0;
     // 50 sleep cycles × (10 000 spins + 100 µs sleep each) ≈ 500 ms total.
     // A real clock must advance within this window; if not, the system is broken.
     const MAX_SPIN_CYCLES: u32 = 50;
+
+    let mut state = mono_state().lock().expect("MonotonicState mutex poisoned");
+    let mut spins: u32 = 0;
+    let mut cycles: u32 = 0;
 
     let (ms, counter) = loop {
         let ms = now_ms().max(state.last_ms); // clamp: never go backward
@@ -921,31 +922,43 @@ mod tests {
         // `typeid decode prefix_01h2xcejqtf2nbrexx3vqjhp41`
         //  → uuid: 0188bac7-4afa-78aa-bc3b-bd1eef28d881
         let uuid1: [u8; 16] = [
-            0x01, 0x88, 0xba, 0xc7, 0x4a, 0xfa, 0x78, 0xaa,
-            0xbc, 0x3b, 0xbd, 0x1e, 0xef, 0x28, 0xd8, 0x81,
+            0x01, 0x88, 0xba, 0xc7, 0x4a, 0xfa, 0x78, 0xaa, 0xbc, 0x3b, 0xbd, 0x1e, 0xef, 0x28,
+            0xd8, 0x81,
         ];
         let enc1 = encode_base32(&uuid1);
-        assert_eq!(std::str::from_utf8(&enc1).unwrap(), "01h2xcejqtf2nbrexx3vqjhp41");
+        assert_eq!(
+            std::str::from_utf8(&enc1).unwrap(),
+            "01h2xcejqtf2nbrexx3vqjhp41"
+        );
 
         // Vector 2: All-zeros UUID → all-zeros suffix
         let uuid2: [u8; 16] = [0u8; 16];
         let enc2 = encode_base32(&uuid2);
-        assert_eq!(std::str::from_utf8(&enc2).unwrap(), "00000000000000000000000000");
+        assert_eq!(
+            std::str::from_utf8(&enc2).unwrap(),
+            "00000000000000000000000000"
+        );
 
         // Vector 3: Max UUID → max suffix (spec §Base32 Encoding)
         let uuid3: [u8; 16] = [0xFF; 16];
         let enc3 = encode_base32(&uuid3);
-        assert_eq!(std::str::from_utf8(&enc3).unwrap(), "7zzzzzzzzzzzzzzzzzzzzzzzzz");
+        assert_eq!(
+            std::str::from_utf8(&enc3).unwrap(),
+            "7zzzzzzzzzzzzzzzzzzzzzzzzz"
+        );
 
         // Vector 4: Sequential bytes (from Go reference lib)
         // UUID 00010203-0405-0607-0809-0a0b0c0d0e0f
         //  → suffix: 00041061050r3gg28a1c60t3gf
         let uuid4: [u8; 16] = [
-            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+            0x0e, 0x0f,
         ];
         let enc4 = encode_base32(&uuid4);
-        assert_eq!(std::str::from_utf8(&enc4).unwrap(), "00041061050r3gg28a1c60t3gf");
+        assert_eq!(
+            std::str::from_utf8(&enc4).unwrap(),
+            "00041061050r3gg28a1c60t3gf"
+        );
     }
 
     #[test]
