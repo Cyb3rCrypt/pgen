@@ -1,10 +1,10 @@
 [package]
 name = "pgen"
-version = "1.2.0"
+version = "1.2.1"
 edition = "2024"
 authors = ["Vikram Sharma"]
 rust-version = "1.85"
-description = "Cryptographically random password generator"
+description = "Cryptographically random password, UUID, and TypeID generator"
 repository = "https://github.com/sharma-vikram/pgen"
 keywords = ["password", "generator", "cli", "cryptography", "security"]
 categories = ["command-line-utilities", "cryptography"]

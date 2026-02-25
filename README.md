@@ -1,18 +1,20 @@
 # pgen
 
-> A fast, cryptographically secure command-line password generator.
+> A fast, cryptographically secure command-line password, UUID, and TypeID generator.
 
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.2.0-green.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-1.2.1-green.svg)](Cargo.toml)
 [![CI](https://github.com/sharma-vikram/pgen/actions/workflows/ci.yml/badge.svg)](https://github.com/sharma-vikram/pgen/actions/workflows/ci.yml)
 
 ## Design & Philosophy
 
-- **CSPRNG**: Uses `ChaCha12` (via `rand`) seeded from the OS entropy source.
-- **Memory Safety**: All intermediate buffers are zeroized (wiped) from memory using the `zeroize` crate.
-- **Usability**: Visually ambiguous characters (`I`, `l`, `1`, `O`, `0`) are excluded to avoid confusion.
-- **Guaranteed Complexity**: Uses a hybrid generation strategy (Mandatory Placement + Uniform Fill + Fisher-Yates Shuffle) to **guarantee** at least 2 characters from every selected set (e.g., symbols, numbers) are present in the final password.
+- **CSPRNG**: All output — passwords, UUIDs, and TypeIDs — is generated using `ChaCha12` seeded from the OS entropy source via the `rand` crate.
+- **Memory Safety**: Intermediate password buffers are zeroized (wiped) on drop using the `zeroize` crate, limiting the window in which secrets are retained in process memory.
+- **Guaranteed Password Complexity**: A hybrid strategy (Mandatory Placement + Uniform Fill + Fisher-Yates Shuffle) **guarantees** at least 2 characters from every selected set are present, with no rejection sampling.
+- **Unambiguous Characters**: Password character sets exclude visually similar glyphs (`I`, `L`, `O` uppercase; `i`, `l`, `o` lowercase; `0`, `1` digits). The TypeID base32 alphabet (Crockford) similarly excludes `i`, `l`, `o`, `u`.
+- **Monotonic UUID v7**: Implements RFC 9562 §6.2 Method 1 — a 12-bit counter in `rand_a` ensures strict lexicographic ordering across all calls within the same process, even within the same millisecond. Clock rollbacks are clamped rather than panicking.
+- **TypeID**: Implements spec v0.3.0 — a validated lowercase ASCII prefix, a `_` separator, and a 26-character Crockford base32-encoded UUID v7 suffix. Monotonic ordering is inherited from the v7 timestamp + counter.
 
 ## Installation
 
@@ -170,7 +172,7 @@ pgen --typeid --count 3
 | Uppercase | `A-Z` | `I`, `L`, `O` |
 | Lowercase | `a-z` | `i`, `l`, `o` |
 | Symbols | `!@#$%^&*-_+=~()[]{};:,.?/` | — |
-| Digits | `0-9` | `0`, `1` |
+| Digits | `2–9` | `0`, `1` |
 
 
 ---

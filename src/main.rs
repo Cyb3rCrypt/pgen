@@ -2,7 +2,7 @@
 #![deny(clippy::all)]
 #![warn(clippy::pedantic)]
 
-//! `pgen` — Fast random password and UUID generator.
+//! `pgen` — Fast random password, UUID, and `TypeID` generator.
 use anyhow::{Result, bail};
 use clap::{Parser, ValueEnum};
 use rand::{Rng, RngExt, seq::IndexedRandom, seq::SliceRandom};
@@ -148,12 +148,7 @@ impl TryFrom<&Args> for Config {
             );
         }
 
-        let count = match args.count {
-            None => 1,
-            Some(0) => bail!("--count must be at least 1."),
-            Some(v) if v > MAX_COUNT => bail!("--count {v} exceeds the maximum of {MAX_COUNT}."),
-            Some(v) => v,
-        };
+        let count = resolve_count(args.count)?;
 
         let pool: Vec<u8> = required_sets
             .iter()
@@ -245,6 +240,11 @@ fn gen_uuid_v4(rng: &mut impl Rng) -> String {
 //
 // Clock rollback: clamped to `last_ms`; counter keeps incrementing.
 // This avoids panicking in production while preserving local monotonicity.
+//
+// Mutex poisoning: `.expect()` panics on a poisoned mutex, terminating the
+// current thread. This is acceptable for a single-threaded CLI binary.
+// Do not embed this module in a library or async runtime without replacing
+// `.expect()` with proper error propagation.
 
 struct MonotonicState {
     last_ms: u64,
@@ -276,10 +276,12 @@ fn now_ms() -> u64 {
 /// Core monotonic `UUIDv7` byte generator (RFC 9562 §6.2 Method 1).
 ///
 /// For any two calls the returned 16-byte value is strictly greater
-/// (lexicographically) than any previously returned value, provided the system
-/// clock does not roll back by more than 4096 ticks within one millisecond.
+/// (lexicographically) than any previously returned value. Clock rollbacks are
+/// clamped; counter exhaustion within the same millisecond causes the caller
+/// to spin-wait until the clock advances, so monotonicity is unconditional.
 fn next_v7_bytes(rng: &mut impl Rng) -> [u8; 16] {
     let mut state = mono_state().lock().expect("MonotonicState mutex poisoned");
+    let mut spins: u32 = 0;
 
     let (ms, counter) = loop {
         let ms = now_ms().max(state.last_ms); // clamp: never go backward
@@ -297,9 +299,17 @@ fn next_v7_bytes(rng: &mut impl Rng) -> [u8; 16] {
             break (ms, state.counter);
         }
 
-        // Counter exhausted — release lock and spin-wait for clock to advance.
+        // Counter exhausted — release lock and wait for clock to advance.
+        // Spin briefly, then sleep to avoid burning CPU on a frozen or
+        // suspended clock (VM pause, NTP leap second, test injection).
         drop(state);
-        std::hint::spin_loop();
+        spins += 1;
+        if spins < 10_000 {
+            std::hint::spin_loop();
+        } else {
+            std::thread::sleep(std::time::Duration::from_micros(100));
+            spins = 0;
+        }
         state = mono_state().lock().expect("MonotonicState mutex poisoned");
     };
     drop(state); // release ASAP; don't hold the lock while building the UUID bytes
@@ -308,8 +318,8 @@ fn next_v7_bytes(rng: &mut impl Rng) -> [u8; 16] {
 
     let mut b = [0u8; 16];
     b[0..6].copy_from_slice(&ms_be[2..8]); // 48-bit timestamp
-    b[6] = 0x70 | ((counter >> 8) as u8); // ver=7, counter[11..8]
-    b[7] = (counter & 0xFF) as u8; // counter[7..0]
+    b[6] = 0x70 | u8::try_from(counter >> 8).expect("12-bit counter: bits [11..8] fit u8"); // ver=7
+    b[7] = u8::try_from(counter & 0xFF).expect("lower 8 bits always fit u8"); // counter[7..0]
     b[8] = 0x80 | (rand_tail[0] & 0x3F); // variant=10, 6 rand bits
     b[9..16].copy_from_slice(&rand_tail[1..8]); // 56 random bits
 
@@ -326,26 +336,14 @@ fn gen_uuid_v7(rng: &mut impl Rng) -> String {
 }
 
 fn format_uuid_bytes(b: &[u8; 16]) -> String {
-    format!(
-        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-\
-         {:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        b[0],
-        b[1],
-        b[2],
-        b[3],
-        b[4],
-        b[5],
-        b[6],
-        b[7],
-        b[8],
-        b[9],
-        b[10],
-        b[11],
-        b[12],
-        b[13],
-        b[14],
-        b[15],
-    )
+    // Each group maps directly to an RFC 4122 UUID field:
+    //   time_low(4B) - time_mid(2B) - time_hi_and_version(2B) - clock_seq(2B) - node(6B)
+    let p0 = u32::from_be_bytes([b[0], b[1], b[2], b[3]]);
+    let p1 = u16::from_be_bytes([b[4], b[5]]);
+    let p2 = u16::from_be_bytes([b[6], b[7]]);
+    let p3 = u16::from_be_bytes([b[8], b[9]]);
+    let p4 = u64::from_be_bytes([0, 0, b[10], b[11], b[12], b[13], b[14], b[15]]);
+    format!("{p0:08x}-{p1:04x}-{p2:04x}-{p3:04x}-{p4:012x}")
 }
 
 // ── TypeID encoding / validation / generation ────────────────────────────────
@@ -356,7 +354,8 @@ fn format_uuid_bytes(b: &[u8; 16]) -> String {
 /// The first output character is always ≤ `'7'` (the top 2 bits are zero).
 ///
 /// # Panics
-/// Never — all arithmetic is on fixed-size arrays with known bounds.
+/// Never in practice — `out` is exactly 26 elements so `i ∈ 0..=25`, making
+/// `5 * i ∈ 0..=125`, which trivially fits `u32` and keeps `shift ≥ 0`.
 #[must_use]
 fn encode_base32(uuid: &[u8; 16]) -> [u8; 26] {
     let n = u128::from_be_bytes(*uuid);
@@ -365,8 +364,10 @@ fn encode_base32(uuid: &[u8; 16]) -> [u8; 26] {
     // i=25 → shift 0   → bottom 5 bits of n.
     let mut out = [0u8; 26];
     for (i, out_byte) in out.iter_mut().enumerate() {
-        let shift = 125u32 - u32::try_from(5 * i).unwrap();
-        let index = usize::try_from((n >> shift) & 0x1F).unwrap();
+        // i ∈ 0..=25 (26-element array), so 5*i ∈ 0..=125 — always fits u32 and shift ≥ 0.
+        let shift = 125u32 - u32::try_from(5 * i).expect("i ≤ 25, so 5*i ≤ 125, fits u32");
+        let index = usize::try_from((n >> shift) & 0x1F)
+            .expect("masked 5-bit value 0..=31 always fits usize");
         *out_byte = TYPEID_ALPHABET[index];
     }
     out
@@ -376,11 +377,9 @@ fn encode_base32(uuid: &[u8; 16]) -> [u8; 26] {
 ///
 /// Returns `Ok(())` if the prefix is valid, or a descriptive `Err` otherwise.
 fn validate_prefix(prefix: &str) -> Result<()> {
-    if prefix.len() > 63 {
-        bail!(
-            "TypeID prefix is {} characters; maximum is 63.",
-            prefix.len()
-        );
+    let char_count = prefix.chars().count();
+    if char_count > 63 {
+        bail!("TypeID prefix is {char_count} characters; maximum is 63.");
     }
     if prefix.is_empty() {
         return Ok(());
@@ -406,7 +405,6 @@ fn validate_prefix(prefix: &str) -> Result<()> {
 ///
 /// # Errors
 /// Returns `Err` if `prefix` fails validation (see [`validate_prefix`]).
-#[allow(dead_code)]
 fn gen_typeid(prefix: &str, rng: &mut impl Rng) -> Result<String> {
     validate_prefix(prefix)?;
     let uuid_bytes = next_v7_bytes(rng);
@@ -440,6 +438,15 @@ fn run() -> Result<()> {
     }
 }
 
+fn resolve_count(count: Option<usize>) -> Result<usize> {
+    match count {
+        None => Ok(1),
+        Some(0) => bail!("--count must be at least 1."),
+        Some(v) if v > MAX_COUNT => bail!("--count {v} exceeds the maximum of {MAX_COUNT}."),
+        Some(v) => Ok(v),
+    }
+}
+
 fn run_pass(args: &Args) -> Result<()> {
     let config = Config::try_from(args)?;
 
@@ -458,6 +465,8 @@ fn run_pass(args: &Args) -> Result<()> {
     let mut handle = stdout.lock();
     let mut rng = rand::rng();
 
+    // NOTE: Zeroizing covers the in-process buffer only. Bytes passed to
+    // write_all() enter kernel I/O buffers that are outside our control.
     for _ in 0..config.count {
         let bytes = pgen(config.length, &config.required_sets, &config.pool, &mut rng);
         handle.write_all(&bytes)?;
@@ -469,12 +478,7 @@ fn run_pass(args: &Args) -> Result<()> {
 }
 
 fn run_uuid(args: &Args) -> Result<()> {
-    let count = match args.count {
-        None => 1,
-        Some(0) => bail!("--count must be at least 1."),
-        Some(v) if v > MAX_COUNT => bail!("--count {v} exceeds the maximum of {MAX_COUNT}."),
-        Some(v) => v,
-    };
+    let count = resolve_count(args.count)?;
 
     let version = args.uuid_version.as_ref().unwrap_or(&UuidVersion::V4);
 
@@ -504,16 +508,13 @@ fn run_uuid(args: &Args) -> Result<()> {
 }
 
 fn run_typeid(args: &Args) -> Result<()> {
-    let count = match args.count {
-        None => 1,
-        Some(0) => bail!("--count must be at least 1."),
-        Some(v) if v > MAX_COUNT => bail!("--count {v} exceeds the maximum of {MAX_COUNT}."),
-        Some(v) => v,
-    };
+    let count = resolve_count(args.count)?;
 
     let prefix = args.typeid_prefix.as_deref().unwrap_or("");
 
-    // Validate once up-front before generating any output.
+    // Validate up-front: fail fast before locking stdout or printing verbose
+    // output. gen_typeid re-validates on each call, which is negligible (≤63
+    // ASCII chars) and keeps gen_typeid independently correct.
     validate_prefix(prefix)?;
 
     if args.verbose {
@@ -529,16 +530,8 @@ fn run_typeid(args: &Args) -> Result<()> {
     let mut rng = rand::rng();
 
     for _ in 0..count {
-        // Prefix already validated; encode_base32 + next_v7_bytes are infallible.
-        let uuid_bytes = next_v7_bytes(&mut rng);
-        let suffix = encode_base32(&uuid_bytes);
-        let suffix_str =
-            std::str::from_utf8(&suffix).expect("base32 suffix is always valid ASCII/UTF-8");
-        if !prefix.is_empty() {
-            handle.write_all(prefix.as_bytes())?;
-            handle.write_all(b"_")?;
-        }
-        handle.write_all(suffix_str.as_bytes())?;
+        let id = gen_typeid(prefix, &mut rng)?;
+        handle.write_all(id.as_bytes())?;
         handle.write_all(b"\n")?;
     }
     handle.flush()?;
@@ -551,7 +544,13 @@ mod tests {
     use super::*;
     use rand::{SeedableRng, rngs::StdRng};
     use std::collections::HashSet;
+    use std::sync::Mutex;
     use zeroize::Zeroize;
+
+    // All tests that read or write MONO_STATE must hold this guard for the
+    // duration of the test. This serialises them against each other without
+    // requiring an external crate, matching what `#[serial]` would provide.
+    static V7_LOCK: Mutex<()> = Mutex::new(());
 
     fn make_test_rng() -> StdRng {
         StdRng::seed_from_u64(42)
@@ -932,6 +931,7 @@ mod tests {
 
     #[test]
     fn uuid_v7_format_and_bits() {
+        let _v7 = V7_LOCK.lock().unwrap();
         let mut rng = make_test_rng();
         for _ in 0..20 {
             let uuid = gen_uuid_v7(&mut rng);
@@ -946,6 +946,7 @@ mod tests {
 
     #[test]
     fn uuid_v7_timestamp_is_current() {
+        let _v7 = V7_LOCK.lock().unwrap();
         // The first 12 hex chars encode a 48-bit Unix timestamp in ms.
         // Strip the hyphen (chars 0..8 + 9..13) and parse as hex.
         let mut rng = rand::rng();
@@ -969,6 +970,7 @@ mod tests {
 
     #[test]
     fn uuid_v7_monotonic() {
+        let _v7 = V7_LOCK.lock().unwrap();
         // Generate 200 v7 UUIDs rapidly (likely within a single millisecond)
         // and assert strict lexicographic monotonicity across the batch.
         let mut rng = rand::rng();
@@ -985,6 +987,7 @@ mod tests {
 
     #[test]
     fn uuid_v7_monotonic_counter_increments() {
+        let _v7 = V7_LOCK.lock().unwrap();
         // Generates 50 UUIDs in a tight loop (very likely within the same ms window)
         // and asserts each is strictly greater than the previous as a 128-bit integer.
         //
@@ -1010,15 +1013,12 @@ mod tests {
 
     #[test]
     fn uuid_v7_clock_rollback_clamped() {
+        let _v7 = V7_LOCK.lock().unwrap();
         // Simulates a clock rollback by injecting a future timestamp directly into
         // MonotonicState, then asserts:
         //   (a) All generated UUIDs use the clamped (injected) timestamp, not the
         //       real clock — proving rollback does not go backward.
         //   (b) The 5 generated UUIDs are still strictly increasing.
-        //
-        // NOTE: shares global MONO_STATE. If the test suite runs multi-threaded
-        // (`cargo test` default), inject/restore can race with other v7 tests.
-        // Run with `cargo test -- --test-threads=1` if flakiness is observed.
         let mut rng = rand::rng();
 
         let future_ms = now_ms() + 5_000;

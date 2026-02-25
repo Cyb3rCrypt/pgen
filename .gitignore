@@ -25,3 +25,6 @@ doc/
 
 # Claude Code session memory
 .claude/
+
+# workspace settings
+*.code-workspace

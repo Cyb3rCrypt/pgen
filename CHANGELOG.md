@@ -9,11 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-02-25
+
+### Fixed
+
+- `validate_prefix` used `str::len()` (byte count) instead of `chars().count()` for the
+  63-character limit, which could incorrectly reject valid multi-byte prefixes shorter
+  than 63 Unicode characters (B1).
+- Silent `.unwrap()` calls in `encode_base32` replaced with `.expect()` annotated with
+  invariant explanations, making any future regression immediately diagnosable (B2).
+- UUID v7 tests now serialize access to `MONO_STATE` via a `static V7_LOCK: Mutex<()>`
+  guard, making them correct under parallel `cargo test` without requiring
+  `--test-threads=1` (P3).
+- `next_v7_bytes` spin-loop now escapes to `thread::sleep(100 µs)` after 10 000 spins,
+  preventing CPU burn when the clock is frozen or suspended (VM pause, NTP leap
+  second, test injection) (P4).
+
+### Changed
+
+- Count validation extracted into a `resolve_count()` helper, eliminating identical
+  triplication across `run_pass`, `run_uuid`, and `run_typeid` (P1).
+- `format_uuid_bytes` refactored from 16 individual byte arguments to 5 RFC 4122
+  named groups (`p0`–`p4`), matching the standard `time_low / time_mid /
+  time_hi_and_version / clock_seq / node` field layout (P2).
+
+### Docs
+
+- Added comment in `run_pass` noting that `Zeroizing` covers only the in-process
+  buffer; bytes written to `write_all()` enter kernel I/O buffers outside our
+  control (S1).
+- Added block comment on `MonotonicState` documenting the mutex-poison assumption
+  and that this design is appropriate only for a single-threaded CLI binary (S3).
+
 ## [1.2.0] — 2026-02-25
 
 ### Added
 
-- `--typeid` flag: generate a [TypeID](https://github.com/jetpack-io/typeid) —
+- `--typeid` flag: generate a [TypeID](https://github.com/jetify-com/typeid) —
   a type-safe, K-sortable identifier with a lowercase ASCII prefix and a
   Crockford base32-encoded UUID v7 suffix (spec v0.3.0).
 - `--typeid-prefix <PREFIX>`: optional prefix for the generated TypeID
@@ -72,7 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-built binaries for Windows x86-64, Linux x86-64, Linux aarch64, macOS x86-64, macOS aarch64 via GitHub Actions release workflow.
 - CI pipeline: `cargo test`, `cargo clippy -D warnings`, `cargo fmt --check`, `cargo audit`.
 
-[Unreleased]: https://github.com/sharma-vikram/pgen/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/sharma-vikram/pgen/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/sharma-vikram/pgen/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/sharma-vikram/pgen/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/sharma-vikram/pgen/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/sharma-vikram/pgen/compare/v1.0.0...v1.1.0
