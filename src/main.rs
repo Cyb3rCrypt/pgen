@@ -7,6 +7,7 @@ use anyhow::{Result, bail};
 use clap::{Parser, ValueEnum};
 use rand::{Rng, RngExt, seq::IndexedRandom, seq::SliceRandom};
 use std::io::Write;
+use std::process::ExitCode;
 use std::sync::{Mutex, OnceLock};
 use zeroize::Zeroizing;
 
@@ -453,10 +454,15 @@ fn gen_typeid(prefix: &str, rng: &mut impl Rng) -> Result<String> {
     Ok(typeid)
 }
 
-fn main() {
-    if let Err(e) = run() {
-        eprintln!("Error: {e}");
-        std::process::exit(1);
+fn main() -> ExitCode {
+    // Return ExitCode instead of calling process::exit so that all
+    // destructors run — in particular Zeroizing<T> drop impls.
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            ExitCode::FAILURE
+        }
     }
 }
 
