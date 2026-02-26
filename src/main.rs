@@ -32,6 +32,7 @@ const MAX_COUNT: usize = 10_000;
 const MIN_PER_SET: usize = 2;
 
 #[derive(Clone, ValueEnum)]
+#[non_exhaustive]
 enum UuidVersion {
     /// Randomly generated (RFC 4122)
     V4,
