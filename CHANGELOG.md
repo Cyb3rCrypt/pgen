@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--ulid`: generate a [ULID](https://github.com/ulid/spec) — a 26-character
+  Crockford Base32 encoded identifier with a 48-bit Unix millisecond timestamp
+  and 80-bit random entropy. Monotonic ordering within the same millisecond is
+  guaranteed by ripple-carry incrementing the entropy buffer (per ULID spec).
+- `run_ulid` uses a zero-alloc `[u8; 26]` stack buffer hot path and `BufWriter`
+  coalescing, consistent with `run_uuid` and `run_typeid`.
+- `--verbose` mode for `--ulid` prints algorithm metadata to stderr.
+- 7 new unit tests (`ulid_format_26_chars`, `ulid_chars_in_alphabet`,
+  `ulid_first_char_le_7`, `ulid_monotonic_ordering`, `ulid_clock_rollback_clamped`,
+  `ulid_uniqueness_smoke`, `encode_ulid_known_vector`) with `ULID_LOCK` + `UlidStateReset`
+  RAII guard to avoid test-state pollution.
+- 4 new integration tests in `tests/cli.rs` (`run_ulid_single_output`,
+  `run_ulid_count_monotonic`, `run_ulid_verbose_to_stderr`,
+  `run_ulid_conflicts_with_length`).
+
+### Changed
+
+- `run_pass --verbose` output label changed from `Entropy:` to `Estimated entropy:`
+  to clarify that the reported value is an approximation.
+
 ## [1.2.3] — 2026-02-26
 
 ### Security
@@ -174,7 +196,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-built binaries for Windows x86-64, Linux x86-64, Linux aarch64, macOS x86-64, macOS aarch64 via GitHub Actions release workflow.
 - CI pipeline: `cargo test`, `cargo clippy -D warnings`, `cargo fmt --check`, `cargo audit`.
 
-[Unreleased]: https://github.com/sharma-vikram/pgen/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/sharma-vikram/pgen/compare/v1.2.3...HEAD
+[1.2.3]: https://github.com/sharma-vikram/pgen/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/sharma-vikram/pgen/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/sharma-vikram/pgen/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/sharma-vikram/pgen/compare/v1.1.1...v1.2.0

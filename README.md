@@ -15,6 +15,7 @@
 - **Unambiguous Characters**: Password character sets exclude visually similar glyphs (`I`, `L`, `O` uppercase; `i`, `l`, `o` lowercase; `0`, `1` digits). The TypeID base32 alphabet (Crockford) similarly excludes `i`, `l`, `o`, `u`.
 - **Monotonic UUID v7**: Implements RFC 9562 §6.2 Method 1 — a 12-bit counter in `rand_a` ensures strict lexicographic ordering across all calls within the same process, even within the same millisecond. Clock rollbacks are clamped rather than panicking.
 - **TypeID**: Implements spec v0.3.0 — a validated lowercase ASCII prefix, a `_` separator, and a 26-character Crockford base32-encoded UUID v7 suffix. Monotonic ordering is inherited from the v7 timestamp + counter.
+- **ULID**: Implements the [ULID spec](https://github.com/ulid/spec) — a 26-character Crockford Base32 encoded identifier with a 48-bit Unix millisecond timestamp and 80-bit random entropy. Monotonic ordering within the same millisecond is guaranteed by ripple-carry incrementing the entropy buffer, matching the spec's monotonicity extension.
 
 ## Installation
 
@@ -72,6 +73,7 @@ pgen --length <LENGTH> [OPTIONS]
 | `--uuid-version <VER>` | | UUID version to generate: `v4` or `v7`; implies `--uuid` | |
 | `--typeid` | | Generate a TypeID (spec v0.3.0): lowercase prefix + Crockford base32 UUID v7 suffix | |
 | `--typeid-prefix <PREFIX>` | | Prefix for the TypeID (1–63 lowercase letters/underscores); implies `--typeid` | |
+| `--ulid` | | Generate a ULID (monotonic 48-bit timestamp + 80-bit entropy, Crockford Base32) | |
 | `--help` | `-h` | Print help | |
 | `--version` | `-V` | Print version | |
 
@@ -161,6 +163,26 @@ pgen --typeid --count 3
 01h455vb4pex5vsknk084sn02q
 01h455vb4r7nd5w8zeyk7j3q24
 01h455vb4s0xr8ftx09c4t1k6e
+```
+
+**Generate a ULID:**
+```
+pgen --ulid
+```
+```
+01JNCQ8MZDBK3P9S6X4V2T7RFW
+```
+
+**Generate 5 ULIDs (monotonically ordered):**
+```
+pgen --ulid --count 5
+```
+```
+01JNCQ8MZDEK5V8W2P4N3Q6TXR
+01JNCQ8MZDEK5V8W2P4N3Q6TXS
+01JNCQ8MZDEK5V8W2P4N3Q6TXT
+01JNCQ8MZDEK5V8W2P4N3Q6TXV
+01JNCQ8MZDEK5V8W2P4N3Q6TXW
 ```
 
 ---
