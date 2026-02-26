@@ -527,7 +527,7 @@ fn run_pass(args: &Args) -> Result<()> {
     }
 
     let stdout = std::io::stdout();
-    let mut handle = stdout.lock();
+    let mut handle = std::io::BufWriter::with_capacity(65_536, stdout.lock());
     let mut rng = rand::rng();
 
     // NOTE: Zeroizing covers the in-process buffer only. Bytes passed to
@@ -556,7 +556,7 @@ fn run_uuid(args: &Args) -> Result<()> {
     }
 
     let stdout = std::io::stdout();
-    let mut handle = stdout.lock();
+    let mut handle = std::io::BufWriter::with_capacity(65_536, stdout.lock());
     let mut rng = rand::rng();
 
     // Zero-alloc hot path: build each UUID into a stack buffer and write
@@ -600,7 +600,7 @@ fn run_typeid(args: &Args) -> Result<()> {
     }
 
     let stdout = std::io::stdout();
-    let mut handle = stdout.lock();
+    let mut handle = std::io::BufWriter::with_capacity(65_536, stdout.lock());
     let mut rng = rand::rng();
 
     // Zero-alloc hot path: write prefix, separator, and raw base32 suffix
