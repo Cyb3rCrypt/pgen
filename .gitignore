@@ -28,3 +28,6 @@ doc/
 
 # workspace settings
 *.code-workspace
+
+# VSCode
+.vscode/
