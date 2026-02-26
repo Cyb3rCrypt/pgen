@@ -9,7 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.2.2] — 2026-02-25
+## [1.2.3] — 2026-02-26
+
+### Security
+
+- `Config.pool` is now wrapped in `Zeroizing<Vec<u8>>`, ensuring the character pool
+  bytes are zeroed on drop. The pool is not secret, but clearing it is consistent with
+  the tool's security posture and closes a zeroization gap identified in an audit.
+- `main()` now returns `std::process::ExitCode` instead of calling `process::exit(1)`,
+  ensuring all destructors — including `Zeroizing<T>` drop impls — run on the error
+  path rather than being bypassed by an abrupt libc exit.
+
+### Performance
+
+- `run_uuid` now uses a zero-alloc `format_uuid_bytes_buf` function that encodes UUID
+  bytes directly into a caller-supplied `[u8; 36]` stack buffer, eliminating one
+  `String` heap allocation per UUID. At `--count 10000` this removes 10 000 allocations.
+- All three output modes (`run_pass`, `run_uuid`, `run_typeid`) now wrap stdout in a
+  `BufWriter::with_capacity(65_536)`, coalescing per-item `write_all` calls into
+  batched 64 KiB kernel writes and reducing syscall frequency at high `--count` values.
+
+### Changed
+
+- `UuidVersion` enum is now marked `#[non_exhaustive]`, preventing downstream breakage
+  if future UUID versions (e.g. v8) are added as new variants.
 
 ### Fixed
 
