@@ -219,6 +219,7 @@ fn pgen(
 }
 
 /// Generates a UUID v4 (randomly generated, RFC 4122).
+#[cfg(test)]
 #[must_use]
 fn gen_uuid_v4(rng: &mut impl Rng) -> String {
     let mut b: [u8; 16] = rng.random();
@@ -355,25 +356,39 @@ fn next_v7_bytes(rng: &mut impl Rng) -> [u8; 16] {
 ///
 /// Strict lexicographic ordering is guaranteed across all calls within the
 /// same process, even within the same millisecond (12-bit counter).
+#[cfg(test)]
 #[must_use]
 fn gen_uuid_v7(rng: &mut impl Rng) -> String {
     format_uuid_bytes(&next_v7_bytes(rng))
 }
 
-fn format_uuid_bytes(b: &[u8; 16]) -> String {
-    // Direct hex encoding into a pre-sized buffer. A UUID string is always
-    // exactly 36 bytes (32 hex digits + 4 hyphens). Avoids the `format!`
-    // machinery and its internal reallocation; measurable at --count 10 000.
+/// Encodes 16 UUID bytes into the 36-byte `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+/// ASCII representation, writing into a caller-supplied stack buffer.
+/// No allocation — intended for use in output hot-paths.
+fn format_uuid_bytes_buf(b: &[u8; 16], out: &mut [u8; 36]) {
     const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(36);
+    let mut pos: usize = 0;
     for (i, &byte) in b.iter().enumerate() {
         if matches!(i, 4 | 6 | 8 | 10) {
-            out.push('-');
+            out[pos] = b'-';
+            pos += 1;
         }
-        out.push(HEX[(byte >> 4) as usize] as char);
-        out.push(HEX[(byte & 0x0F) as usize] as char);
+        out[pos] = HEX[(byte >> 4) as usize];
+        out[pos + 1] = HEX[(byte & 0x0F) as usize];
+        pos += 2;
     }
-    out
+}
+
+/// Returns the UUID as an owned `String`. Used by `gen_uuid_v4` / `gen_uuid_v7`
+/// and their test callers. Output hot-paths use `format_uuid_bytes_buf` instead.
+#[cfg(test)]
+fn format_uuid_bytes(b: &[u8; 16]) -> String {
+    let mut buf = [0u8; 36];
+    format_uuid_bytes_buf(b, &mut buf);
+    // buf contains only ASCII hex digits and hyphens — always valid UTF-8.
+    std::str::from_utf8(&buf)
+        .expect("UUID buffer contains only ASCII hex digits and hyphens")
+        .to_owned()
 }
 
 // ── TypeID encoding / validation / generation ────────────────────────────────
@@ -544,12 +559,21 @@ fn run_uuid(args: &Args) -> Result<()> {
     let mut handle = stdout.lock();
     let mut rng = rand::rng();
 
+    // Zero-alloc hot path: build each UUID into a stack buffer and write
+    // directly — no per-UUID String allocation, matching run_typeid's approach.
+    let mut buf = [0u8; 36];
     for _ in 0..count {
-        let uuid = match version {
-            UuidVersion::V4 => gen_uuid_v4(&mut rng),
-            UuidVersion::V7 => gen_uuid_v7(&mut rng),
+        let bytes = match version {
+            UuidVersion::V4 => {
+                let mut b: [u8; 16] = rng.random();
+                b[6] = (b[6] & 0x0f) | 0x40; // version 4
+                b[8] = (b[8] & 0x3f) | 0x80; // variant 0b10xxxxxx (RFC 4122)
+                b
+            }
+            UuidVersion::V7 => next_v7_bytes(&mut rng),
         };
-        handle.write_all(uuid.as_bytes())?;
+        format_uuid_bytes_buf(&bytes, &mut buf);
+        handle.write_all(&buf)?;
         handle.write_all(b"\n")?;
     }
     handle.flush()?;
