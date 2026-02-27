@@ -1,15 +1,15 @@
 # pgen
 
-> A fast, cryptographically secure command-line password, UUID, and TypeID generator.
+> A fast, cryptographically secure command-line password, UUID, TypeID, and ULID generator.
 
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.2.3-green.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-1.3.1-green.svg)](Cargo.toml)
 [![CI](https://github.com/sharma-vikram/pgen/actions/workflows/ci.yml/badge.svg)](https://github.com/sharma-vikram/pgen/actions/workflows/ci.yml)
 
 ## Design & Philosophy
 
-- **CSPRNG**: All output — passwords, UUIDs, and TypeIDs — is generated using `ChaCha12` seeded from the OS entropy source via the `rand` crate.
+- **CSPRNG**: All output uses `rand::rng()` from the `rand` crate, backed by OS randomness and suitable for cryptographic generation.
 - **Memory Safety**: Intermediate password buffers are zeroized (wiped) on drop using the `zeroize` crate, limiting the window in which secrets are retained in process memory.
 - **Guaranteed Password Complexity**: A hybrid strategy (Mandatory Placement + Uniform Fill + Fisher-Yates Shuffle) **guarantees** at least 2 characters from every selected set are present, with no rejection sampling.
 - **Unambiguous Characters**: Password character sets exclude visually similar glyphs (`I`, `L`, `O` uppercase; `i`, `l`, `o` lowercase; `0`, `1` digits). The TypeID base32 alphabet (Crockford) similarly excludes `i`, `l`, `o`, `u`.
@@ -78,6 +78,8 @@ pgen --length <LENGTH> [OPTIONS]
 | `--version` | `-V` | Print version | |
 
 > **Note:** Uppercase and lowercase letters are **included by default**. Use `--no-upper` / `--no-lower` to opt out.
+
+> **Distribution note:** Fill characters are sampled uniformly from the pooled alphabet, so larger enabled sets (for example symbols) appear more often than smaller sets (for example digits).
 
 ---
 
@@ -199,7 +201,7 @@ pgen --ulid --count 5
 
 ---
 
-CI runs on every push and pull request to `main`: `cargo test`, `cargo clippy -D warnings`, `cargo fmt --check`, and `cargo audit` (CVE scanning). See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+CI runs on every push and pull request to `main`: `cargo test --all-features -- --test-threads=1`, `cargo fmt --check`, `cargo clippy --all-features -- -D warnings`, and `rustsec/audit-check`. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ---
 

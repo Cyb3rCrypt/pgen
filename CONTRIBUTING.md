@@ -215,15 +215,15 @@ All style checks run in CI. A PR with failing checks will not be merged.
 | Tool | Command | What it enforces |
 |------|---------|-----------------|
 | `rustfmt` | `cargo fmt --check` | Canonical Rust formatting |
-| `clippy` | `cargo clippy --all-targets -- -D warnings` | Lints (all + pedantic + nursery + cargo) |
+| `clippy` | `cargo clippy --all-features -- -D warnings` | Lints (all + pedantic + nursery + cargo) |
 | `cargo-audit` | `cargo audit` | Known vulnerability advisories |
 
 Run everything locally before pushing:
 
 ```sh
 cargo fmt
-cargo clippy --all-targets -- -D warnings
-cargo test
+cargo clippy --all-features -- -D warnings
+cargo test --all-features -- --test-threads=1
 cargo audit
 ```
 

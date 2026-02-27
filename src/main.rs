@@ -40,7 +40,6 @@ const MAX_COUNT: usize = 10_000;
 const MIN_PER_SET: usize = 2;
 
 #[derive(Clone, ValueEnum)]
-#[non_exhaustive]
 enum UuidVersion {
     /// Randomly generated (RFC 4122)
     V4,
@@ -49,12 +48,14 @@ enum UuidVersion {
 }
 
 #[derive(Parser)]
+#[cfg_attr(test, derive(Default))]
 #[command(
     author,
     version,
     about,
     // clap 4's default template omits {author}; this restores it.
     help_template = "{name} {version}  —  {author} {about-section}\n{usage-heading} {usage}\n\n{all-args}{after-help}",
+    after_help = "Password distribution note: fill characters are sampled uniformly from the pooled alphabet, so larger enabled sets (for example symbols) appear more often than smaller sets (for example digits).",
 )]
 #[allow(clippy::struct_excessive_bools)] // inherent to a flag-heavy CLI struct
 struct Args {
@@ -127,9 +128,11 @@ impl TryFrom<&Args> for Config {
     type Error = anyhow::Error;
 
     fn try_from(args: &Args) -> Result<Self> {
-        let length = args
-            .length
-            .expect("clap guarantees --length is present in password mode");
+        let length = args.length.ok_or_else(|| {
+            anyhow::anyhow!(
+                "--length is required in password mode; this should be enforced by clap"
+            )
+        })?;
 
         if length < MIN_LENGTH {
             bail!("--length {length} is below the minimum of {MIN_LENGTH}.");
@@ -232,12 +235,23 @@ fn pgen(
 }
 
 /// Generates a UUID v4 (randomly generated, RFC 4122).
+const fn apply_uuid_v4_bits(b: &mut [u8; 16]) {
+    b[6] = (b[6] & 0x0f) | 0x40; // version 4
+    b[8] = (b[8] & 0x3f) | 0x80; // variant 0b10xxxxxx (RFC 4122)
+}
+
+#[must_use]
+fn gen_uuid_v4_bytes(rng: &mut impl Rng) -> [u8; 16] {
+    let mut b: [u8; 16] = rng.random();
+    apply_uuid_v4_bits(&mut b);
+    b
+}
+
+/// Generates a UUID v4 (randomly generated, RFC 4122).
 #[cfg(test)]
 #[must_use]
 fn gen_uuid_v4(rng: &mut impl Rng) -> String {
-    let mut b: [u8; 16] = rng.random();
-    b[6] = (b[6] & 0x0f) | 0x40; // version 4
-    b[8] = (b[8] & 0x3f) | 0x80; // variant 0b10xxxxxx (RFC 4122)
+    let b = gen_uuid_v4_bytes(rng);
     format_uuid_bytes(&b)
 }
 
@@ -301,11 +315,11 @@ fn now_ms() -> u64 {
 /// to spin-wait (bounded to ~500 ms) until the clock advances, so monotonicity
 /// is unconditional.
 ///
-/// # Panics
-/// Panics if the system clock does not advance within ~500 ms (50 sleep
-/// cycles). This indicates a frozen or suspended clock and is unrecoverable
-/// for a monotonic generator.
-fn next_v7_bytes(rng: &mut impl Rng) -> [u8; 16] {
+/// # Errors
+/// Returns `Err` if the system clock does not advance within ~500 ms (50 sleep
+/// cycles). This indicates a frozen or suspended clock and monotonic `UUIDv7`
+/// generation cannot progress safely.
+fn next_v7_bytes(rng: &mut impl Rng) -> Result<[u8; 16]> {
     // 50 sleep cycles × (10 000 spins + 100 µs sleep each) ≈ 500 ms total.
     // A real clock must advance within this window; if not, the system is broken.
     const MAX_SPIN_CYCLES: u32 = 50;
@@ -343,11 +357,12 @@ fn next_v7_bytes(rng: &mut impl Rng) -> [u8; 16] {
             std::thread::sleep(std::time::Duration::from_micros(100));
             spins = 0;
             cycles += 1;
-            assert!(
-                cycles < MAX_SPIN_CYCLES,
-                "UUIDv7 counter exhausted: clock did not advance within \
-                 {MAX_SPIN_CYCLES} sleep cycles (~500 ms)"
-            );
+            if cycles >= MAX_SPIN_CYCLES {
+                bail!(
+                    "UUIDv7 counter exhausted: clock did not advance within \
+                     {MAX_SPIN_CYCLES} sleep cycles (~500 ms)"
+                );
+            }
         }
         state = mono_state().lock().expect("MonotonicState mutex poisoned");
     };
@@ -362,7 +377,7 @@ fn next_v7_bytes(rng: &mut impl Rng) -> [u8; 16] {
     b[8] = 0x80 | (rand_tail[0] & 0x3F); // variant=10, 6 rand bits
     b[9..16].copy_from_slice(&rand_tail[1..8]); // 56 random bits
 
-    b
+    Ok(b)
 }
 
 /// Generates a UUID v7 (monotonic, RFC 9562 §6.2 Method 1).
@@ -372,7 +387,7 @@ fn next_v7_bytes(rng: &mut impl Rng) -> [u8; 16] {
 #[cfg(test)]
 #[must_use]
 fn gen_uuid_v7(rng: &mut impl Rng) -> String {
-    format_uuid_bytes(&next_v7_bytes(rng))
+    format_uuid_bytes(&next_v7_bytes(rng).expect("v7 generation failed: monotonic clock stalled"))
 }
 
 /// Encodes 16 UUID bytes into the 36-byte `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
@@ -411,9 +426,6 @@ fn format_uuid_bytes(b: &[u8; 16]) -> String {
 /// Two zero bits are prepended, giving 130 bits split into 26 × 5-bit groups.
 /// The first output character is always ≤ `'7'` (the top 2 bits are zero).
 ///
-/// # Panics
-/// Never in practice — `out` is exactly 26 elements so `i ∈ 0..=25`, making
-/// `5 * i ∈ 0..=125`, which trivially fits `u32` and keeps `shift ≥ 0`.
 #[must_use]
 fn encode_base32(uuid: &[u8; 16]) -> [u8; 26] {
     let n = u128::from_be_bytes(*uuid);
@@ -422,8 +434,7 @@ fn encode_base32(uuid: &[u8; 16]) -> [u8; 26] {
     // i=25 → shift 0   → bottom 5 bits of n.
     let mut out = [0u8; 26];
     for (i, out_byte) in out.iter_mut().enumerate() {
-        // i ∈ 0..=25 (26-element array), so 5*i ∈ 0..=125 — always fits u32 and shift ≥ 0.
-        let shift = 125u32 - u32::try_from(5 * i).expect("i ≤ 25, so 5*i ≤ 125, fits u32");
+        let shift = 125u32 - u32::try_from(5 * i).expect("i ≤ 25, so 5*i ≤ 125, fits in u32");
         let index = usize::try_from((n >> shift) & 0x1F)
             .expect("masked 5-bit value 0..=31 always fits usize");
         *out_byte = TYPEID_ALPHABET[index];
@@ -435,12 +446,15 @@ fn encode_base32(uuid: &[u8; 16]) -> [u8; 26] {
 ///
 /// Returns `Ok(())` if the prefix is valid, or a descriptive `Err` otherwise.
 fn validate_prefix(prefix: &str) -> Result<()> {
-    let char_count = prefix.chars().count();
-    if char_count > 63 {
-        bail!("TypeID prefix is {char_count} characters; maximum is 63.");
-    }
     if prefix.is_empty() {
         return Ok(());
+    }
+    if !prefix.is_ascii() {
+        bail!("TypeID prefix {prefix:?} must be ASCII.");
+    }
+    let byte_len = prefix.len();
+    if byte_len > 63 {
+        bail!("TypeID prefix is {byte_len} bytes; maximum is 63.");
     }
     if !prefix.starts_with(|c: char| c.is_ascii_lowercase()) {
         bail!("TypeID prefix {prefix:?} must start with a lowercase ASCII letter [a-z].");
@@ -469,7 +483,7 @@ fn validate_prefix(prefix: &str) -> Result<()> {
 #[allow(dead_code)]
 fn gen_typeid(prefix: &str, rng: &mut impl Rng) -> Result<String> {
     validate_prefix(prefix)?;
-    let uuid_bytes = next_v7_bytes(rng);
+    let uuid_bytes = next_v7_bytes(rng)?;
     let suffix = encode_base32(&uuid_bytes);
     // TYPEID_ALPHABET is pure ASCII, so the output is always valid UTF-8.
     let suffix_str =
@@ -534,9 +548,9 @@ fn ulid_increment(entropy: &mut [u8; 10]) -> bool {
 /// Returns the next monotonic ULID as a raw `[u8; 26]` of ASCII bytes.
 ///
 /// Spin-wait behaviour on entropy overflow mirrors `next_v7_bytes`:
-/// bounded to 500 ms (50 sleep cycles); panics if the clock does not
+/// bounded to 500 ms (50 sleep cycles); returns an error if the clock does not
 /// advance within that window.
-fn next_ulid_bytes(rng: &mut impl Rng) -> [u8; 26] {
+fn next_ulid_bytes(rng: &mut impl Rng) -> Result<[u8; 26]> {
     const MAX_SPIN_CYCLES: u32 = 50;
 
     let mut state = ulid_state().lock().expect("UlidState mutex poisoned");
@@ -565,11 +579,12 @@ fn next_ulid_bytes(rng: &mut impl Rng) -> [u8; 26] {
             std::thread::sleep(std::time::Duration::from_micros(100));
             spins = 0;
             cycles += 1;
-            assert!(
-                cycles < MAX_SPIN_CYCLES,
-                "ULID entropy exhausted: clock did not advance within \
-                 {MAX_SPIN_CYCLES} sleep cycles (500 ms)"
-            );
+            if cycles >= MAX_SPIN_CYCLES {
+                bail!(
+                    "ULID entropy exhausted: clock did not advance within \
+                     {MAX_SPIN_CYCLES} sleep cycles (500 ms)"
+                );
+            }
         } else {
             std::hint::spin_loop();
         }
@@ -578,7 +593,7 @@ fn next_ulid_bytes(rng: &mut impl Rng) -> [u8; 26] {
 
     drop(state); // release ASAP; encoding is pure computation
 
-    encode_ulid(ms, &entropy_snapshot)
+    Ok(encode_ulid(ms, &entropy_snapshot))
 }
 
 /// Encodes a 48-bit timestamp and 80-bit entropy into a 26-byte
@@ -611,7 +626,7 @@ fn encode_ulid(timestamp_ms: u64, entropy: &[u8; 10]) -> [u8; 26] {
 #[cfg(test)]
 #[must_use]
 fn gen_ulid(rng: &mut impl Rng) -> String {
-    let bytes = next_ulid_bytes(rng);
+    let bytes = next_ulid_bytes(rng).expect("ULID generation failed: monotonic clock stalled");
     // SAFETY: ULID_ALPHABET is pure ASCII; every byte in buf is from it.
     std::str::from_utf8(&bytes)
         .expect("ULID buffer contains only ASCII")
@@ -631,7 +646,7 @@ fn run_ulid(args: &Args) -> Result<()> {
 
     // Zero-alloc hot path: write raw [u8; 26] stack buffer directly.
     for _ in 0..count {
-        let buf = next_ulid_bytes(&mut rng);
+        let buf = next_ulid_bytes(&mut rng)?;
         handle.write_all(&buf)?;
         handle.write_all(b"\n")?;
     }
@@ -736,13 +751,8 @@ fn run_uuid(args: &Args) -> Result<()> {
     let mut buf = [0u8; 36];
     for _ in 0..count {
         let bytes = match version {
-            UuidVersion::V4 => {
-                let mut b: [u8; 16] = rng.random();
-                b[6] = (b[6] & 0x0f) | 0x40; // version 4
-                b[8] = (b[8] & 0x3f) | 0x80; // variant 0b10xxxxxx (RFC 4122)
-                b
-            }
-            UuidVersion::V7 => next_v7_bytes(&mut rng),
+            UuidVersion::V4 => gen_uuid_v4_bytes(&mut rng),
+            UuidVersion::V7 => next_v7_bytes(&mut rng)?,
         };
         format_uuid_bytes_buf(&bytes, &mut buf);
         handle.write_all(&buf)?;
@@ -781,7 +791,7 @@ fn run_typeid(args: &Args) -> Result<()> {
     // skip it since prefix is already validated above.
     let prefix_bytes = prefix.as_bytes();
     for _ in 0..count {
-        let suffix = encode_base32(&next_v7_bytes(&mut rng));
+        let suffix = encode_base32(&next_v7_bytes(&mut rng)?);
         if !prefix_bytes.is_empty() {
             handle.write_all(prefix_bytes)?;
             handle.write_all(b"_")?;
@@ -832,15 +842,7 @@ mod tests {
             length: Some(16),
             no_upper: true,
             no_lower: true,
-            symbol: false,
-            number: false,
-            count: None,
-            verbose: false,
-            uuid: false,
-            uuid_version: None,
-            typeid: false,
-            typeid_prefix: None,
-            ulid: false,
+            ..Default::default()
         };
         assert!(Config::try_from(&args).is_err());
     }
@@ -849,17 +851,8 @@ mod tests {
     fn config_rejects_count_zero() {
         let args = Args {
             length: Some(16),
-            no_upper: false,
-            no_lower: false,
-            symbol: false,
-            number: false,
             count: Some(0),
-            verbose: false,
-            uuid: false,
-            uuid_version: None,
-            typeid: false,
-            typeid_prefix: None,
-            ulid: false,
+            ..Default::default()
         };
         assert!(Config::try_from(&args).is_err());
     }
@@ -868,17 +861,8 @@ mod tests {
     fn config_rejects_count_over_max() {
         let args = Args {
             length: Some(16),
-            no_upper: false,
-            no_lower: false,
-            symbol: false,
-            number: false,
             count: Some(MAX_COUNT + 1),
-            verbose: false,
-            uuid: false,
-            uuid_version: None,
-            typeid: false,
-            typeid_prefix: None,
-            ulid: false,
+            ..Default::default()
         };
         assert!(Config::try_from(&args).is_err());
     }
@@ -887,17 +871,7 @@ mod tests {
     fn config_rejects_short_length() {
         let args = Args {
             length: Some(4),
-            no_upper: false,
-            no_lower: false,
-            symbol: false,
-            number: false,
-            count: None,
-            verbose: false,
-            uuid: false,
-            uuid_version: None,
-            typeid: false,
-            typeid_prefix: None,
-            ulid: false,
+            ..Default::default()
         };
         assert!(Config::try_from(&args).is_err());
     }
@@ -906,17 +880,7 @@ mod tests {
     fn config_rejects_length_over_max() {
         let args = Args {
             length: Some(MAX_LENGTH + 1),
-            no_upper: false,
-            no_lower: false,
-            symbol: false,
-            number: false,
-            count: None,
-            verbose: false,
-            uuid: false,
-            uuid_version: None,
-            typeid: false,
-            typeid_prefix: None,
-            ulid: false,
+            ..Default::default()
         };
         assert!(Config::try_from(&args).is_err());
     }
@@ -925,17 +889,9 @@ mod tests {
     fn config_accepts_max_sets_at_min_length() {
         let args = Args {
             length: Some(MIN_LENGTH),
-            no_upper: false,
-            no_lower: false,
             symbol: true,
             number: true,
-            count: None,
-            verbose: false,
-            uuid: false,
-            uuid_version: None,
-            typeid: false,
-            typeid_prefix: None,
-            ulid: false,
+            ..Default::default()
         };
         assert!(Config::try_from(&args).is_ok());
     }

@@ -7,7 +7,7 @@ backported.
 
 | Version | Supported |
 |---------|-----------|
-| Latest (`1.2.x`) | ✅ |
+| Latest (`1.3.x`) | ✅ |
 | Older | ❌ |
 
 ## Reporting a Vulnerability

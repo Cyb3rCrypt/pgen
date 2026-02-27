@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] — 2026-02-27
+
+### Fixed
+
+- Hardened error handling in monotonic UUIDv7/ULID generators by returning
+  `Result` from spin-wait paths instead of `assert!` aborts, improving failure
+  behavior under stalled clocks.
+- Unified UUID v4 bit-setting logic through shared helpers to eliminate
+  duplicated production/test manipulation code.
+- Improved `TypeID` prefix validation by enforcing ASCII and byte-length limits
+  consistently with output behavior.
+- Resolved strict clippy issues for both `--all-targets` and `--all-features`
+  gates.
+
+### Added
+
+- Expanded CLI integration coverage for argument edge cases, including missing
+  required args, invalid boundaries, mode conflicts, and count validation across
+  generation modes.
+
+### Changed
+
+- Synchronized README, contributing/release docs, and security policy metadata
+  with current codebase and CI behavior.
+
 ## [1.3.0] — 2026-02-27
 
 ### Added
@@ -198,7 +223,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-built binaries for Windows x86-64, Linux x86-64, Linux aarch64, macOS x86-64, macOS aarch64 via GitHub Actions release workflow.
 - CI pipeline: `cargo test`, `cargo clippy -D warnings`, `cargo fmt --check`, `cargo audit`.
 
-[Unreleased]: https://github.com/sharma-vikram/pgen/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/sharma-vikram/pgen/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/sharma-vikram/pgen/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/sharma-vikram/pgen/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/sharma-vikram/pgen/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/sharma-vikram/pgen/compare/v1.2.1...v1.2.2

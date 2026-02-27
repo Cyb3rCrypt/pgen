@@ -229,3 +229,138 @@ fn run_ulid_conflicts_with_length() {
         "expected non-zero exit when --ulid combined with --length"
     );
 }
+
+/// --help includes a distribution warning for pooled password generation.
+#[test]
+fn help_mentions_pool_weighting_note() {
+    let output = pgen().arg("--help").output().expect("failed to spawn pgen");
+    assert!(
+        output.status.success(),
+        "expected exit 0, got {:?}",
+        output.status
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout must be UTF-8");
+    assert!(
+        stdout.contains("sampled uniformly from the pooled alphabet"),
+        "help output is missing pool-weighting warning:\n{stdout}"
+    );
+}
+
+/// Running without mode flags and without `--length` should fail (password mode requires length).
+#[test]
+fn run_requires_length_in_password_mode() {
+    let output = pgen().output().expect("failed to spawn pgen");
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit when no arguments are provided"
+    );
+}
+
+/// `--length` below minimum should fail with a validation error.
+#[test]
+fn run_rejects_length_below_minimum() {
+    let output = pgen()
+        .args(["--length", "9"])
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit for length below minimum"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("below the minimum"),
+        "expected minimum-length error, got: {stderr}"
+    );
+}
+
+/// `--length` above maximum should fail with a validation error.
+#[test]
+fn run_rejects_length_above_maximum() {
+    let output = pgen()
+        .args(["--length", "4097"])
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit for length above maximum"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("exceeds the maximum"),
+        "expected maximum-length error, got: {stderr}"
+    );
+}
+
+/// Disabling upper and lower without enabling symbols/numbers should fail.
+#[test]
+fn run_rejects_no_active_character_sets() {
+    let output = pgen()
+        .args(["--length", "16", "--no-upper", "--no-lower"])
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit when no character sets are active"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("No character sets are active"),
+        "expected no-active-set error, got: {stderr}"
+    );
+}
+
+/// `--count 0` should fail consistently in every generation mode.
+#[test]
+fn run_rejects_count_zero_in_all_modes() {
+    let cases: &[&[&str]] = &[
+        &["--length", "16", "--count", "0"],
+        &["--uuid", "--count", "0"],
+        &["--typeid", "--count", "0"],
+        &["--ulid", "--count", "0"],
+    ];
+
+    for args in cases {
+        let output = pgen().args(*args).output().expect("failed to spawn pgen");
+        assert!(
+            !output.status.success(),
+            "expected non-zero exit for args: {args:?}"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("--count must be at least 1"),
+            "expected count validation error for {args:?}, got: {stderr}"
+        );
+    }
+}
+
+/// `--count` over the hard maximum should fail.
+#[test]
+fn run_rejects_count_above_maximum() {
+    let output = pgen()
+        .args(["--uuid", "--count", "10001"])
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit for count over maximum"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("exceeds the maximum"),
+        "expected maximum-count error, got: {stderr}"
+    );
+}
+
+/// Mutually exclusive mode flags should be rejected by clap.
+#[test]
+fn run_rejects_conflicting_modes() {
+    let output = pgen()
+        .args(["--uuid", "--ulid"])
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit for conflicting mode flags"
+    );
+}
