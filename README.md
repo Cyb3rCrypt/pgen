@@ -1,6 +1,6 @@
 # pgen
 
-> A fast, cryptographically secure command-line password, UUID, TypeID, and ULID generator.
+> A fast, cryptographically secure command-line password, UUID, TypeID, ULID, and NanoID generator.
 
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -16,6 +16,7 @@
 - **Monotonic UUID v7**: Implements RFC 9562 §6.2 Method 1 — a 12-bit counter in `rand_a` ensures strict lexicographic ordering across all calls within the same process, even within the same millisecond. Clock rollbacks are clamped rather than panicking.
 - **TypeID**: Implements spec v0.3.0 — a validated lowercase ASCII prefix, a `_` separator, and a 26-character Crockford base32-encoded UUID v7 suffix. Monotonic ordering is inherited from the v7 timestamp + counter.
 - **ULID**: Implements the [ULID spec](https://github.com/ulid/spec) — a 26-character Crockford Base32 encoded identifier with a 48-bit Unix millisecond timestamp and 80-bit random entropy. Monotonic ordering within the same millisecond is guaranteed by ripple-carry incrementing the entropy buffer, matching the spec's monotonicity extension.
+- **NanoID**: Implements NanoID-compatible generation with the default URL-safe alphabet (`A-Za-z0-9_-`) and optional custom alphabets using rejection sampling to avoid modulo bias.
 
 ## Installation
 
@@ -74,6 +75,9 @@ pgen --length <LENGTH> [OPTIONS]
 | `--typeid` | | Generate a TypeID (spec v0.3.0): lowercase prefix + Crockford base32 UUID v7 suffix | |
 | `--typeid-prefix <PREFIX>` | | Prefix for the TypeID (1–63 lowercase letters/underscores); implies `--typeid` | |
 | `--ulid` | | Generate a ULID (monotonic 48-bit timestamp + 80-bit entropy, Crockford Base32) | |
+| `--nanoid` | | Generate a NanoID (URL-safe by default) | |
+| `--nanoid-size <N>` | | NanoID length (minimum: 1, maximum: 4096) | `21` |
+| `--nanoid-alphabet <ALPHABET>` | | Custom NanoID alphabet (2–255 unique printable ASCII chars) | default URL-safe |
 | `--help` | `-h` | Print help | |
 | `--version` | `-V` | Print version | |
 
@@ -185,6 +189,30 @@ pgen --ulid --count 5
 01JNCQ8MZDEK5V8W2P4N3Q6TXT
 01JNCQ8MZDEK5V8W2P4N3Q6TXV
 01JNCQ8MZDEK5V8W2P4N3Q6TXW
+```
+
+**Generate a default NanoID (21 chars):**
+```
+pgen --nanoid
+```
+```
+V1StGXR8_Z5jdHi6B-myT
+```
+
+**Generate a 32-char NanoID:**
+```
+pgen --nanoid-size 32
+```
+```
+Xv9A2x2N8y7sV3rQ1mL0bPzKcT4uW5dE
+```
+
+**Generate NanoID with custom alphabet:**
+```
+pgen --nanoid --nanoid-alphabet ABC123 --nanoid-size 16
+```
+```
+AC21B3A12C31AB2C
 ```
 
 ---
