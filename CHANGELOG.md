@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-03-01
+
 ### Added
 
 - `--nanoid` mode for generating NanoID-style IDs using the default
@@ -235,7 +237,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-built binaries for Windows x86-64, Linux x86-64, Linux aarch64, macOS x86-64, macOS aarch64 via GitHub Actions release workflow.
 - CI pipeline: `cargo test`, `cargo clippy -D warnings`, `cargo fmt --check`, `cargo audit`.
 
-[Unreleased]: https://github.com/sharma-vikram/pgen/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/sharma-vikram/pgen/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/sharma-vikram/pgen/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/sharma-vikram/pgen/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/sharma-vikram/pgen/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/sharma-vikram/pgen/compare/v1.2.2...v1.2.3
