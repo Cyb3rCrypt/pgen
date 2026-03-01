@@ -1747,6 +1747,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cast_precision_loss)] // test-only: values ≤ 10_000, well within f64 mantissa
     fn nanoid_custom_no_bias_uniform_distribution() {
         let alpha = b"AB";
         let mut rng = rand::rng();

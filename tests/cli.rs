@@ -250,7 +250,7 @@ fn run_ulid_conflicts_with_length() {
 // --nanoid integration tests
 // ---------------------------------------------------------------------------
 
-/// --nanoid emits one default-length (21) URL-safe NanoID.
+/// --nanoid emits one default-length (21) URL-safe `NanoID`.
 #[test]
 fn run_nanoid_single_default_output() {
     let output = pgen()
@@ -269,7 +269,7 @@ fn run_nanoid_single_default_output() {
     assert_valid_nanoid(line, 21, "run_nanoid_single_default_output");
 }
 
-/// --nanoid-size changes the output length and implies NanoID mode.
+/// --nanoid-size changes the output length and implies `NanoID` mode.
 #[test]
 fn run_nanoid_size_implies_mode() {
     let output = pgen()
@@ -287,7 +287,7 @@ fn run_nanoid_size_implies_mode() {
     assert_valid_nanoid(line, 32, "run_nanoid_size_implies_mode");
 }
 
-/// --nanoid --count 5 prints exactly 5 valid NanoIDs.
+/// --nanoid --count 5 prints exactly 5 valid `NanoID`s.
 #[test]
 fn run_nanoid_count_five() {
     let output = pgen()
@@ -356,7 +356,7 @@ fn run_nanoid_rejects_invalid_alphabet() {
     );
 }
 
-/// --nanoid --verbose prints NanoID descriptor to stderr.
+/// --nanoid --verbose prints `NanoID` descriptor to stderr.
 #[test]
 fn run_nanoid_verbose_to_stderr() {
     let output = pgen()
