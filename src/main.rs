@@ -2,7 +2,7 @@
 #![deny(clippy::all)]
 #![warn(clippy::pedantic)]
 
-//! `pgen` — Fast random password, `UUID`, `TypeID`, and `ULID` generator.
+//! `pgen` — Fast random password, `UUID`, `TypeID`, `ULID`, and `NanoID` generator.
 use anyhow::{Result, bail};
 use clap::{Parser, ValueEnum};
 use rand::{Rng, RngExt, seq::IndexedRandom, seq::SliceRandom};
@@ -39,6 +39,19 @@ const MAX_LENGTH: usize = 4096;
 const MAX_COUNT: usize = 10_000;
 const MIN_PER_SET: usize = 2;
 
+// ── NanoID constants ─────────────────────────────────────────────────────────
+//
+// Default 64-character URL-safe alphabet — identical to upstream NanoID JS:
+// `A–Z a–z 0–9 _ -` (scrambled order, not sorted)
+const NANOID_DEFAULT_SIZE: usize = 21;
+const NANOID_MIN_SIZE: usize = 1;
+const NANOID_MAX_SIZE: usize = 4096;
+const NANOID_ALPHABET_MIN: usize = 2;
+const NANOID_ALPHABET_MAX: usize = 255;
+
+const NANOID_URL_ALPHABET: &[u8; 64] =
+    b"useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict";
+
 #[derive(Clone, ValueEnum)]
 enum UuidVersion {
     /// Randomly generated (RFC 4122)
@@ -64,25 +77,25 @@ struct Args {
         short,
         long,
         value_name = "LENGTH",
-        required_unless_present_any = ["uuid", "uuid_version", "typeid", "typeid_prefix", "ulid"],
-        conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix", "ulid"]
+        required_unless_present_any = ["uuid", "uuid_version", "typeid", "typeid_prefix", "ulid", "nanoid", "nanoid_size", "nanoid_alphabet"],
+        conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix", "ulid", "nanoid", "nanoid_size", "nanoid_alphabet"]
     )]
     length: Option<usize>,
 
     /// Exclude uppercase letters
-    #[arg(long, conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix", "ulid"])]
+    #[arg(long, conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix", "ulid", "nanoid", "nanoid_size", "nanoid_alphabet"])]
     no_upper: bool,
 
     /// Exclude lowercase letters
-    #[arg(long, conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix", "ulid"])]
+    #[arg(long, conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix", "ulid", "nanoid", "nanoid_size", "nanoid_alphabet"])]
     no_lower: bool,
 
     /// Include symbols: !@#$%^&*-_+=~()[]{};:,.?/
-    #[arg(short, long, conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix", "ulid"])]
+    #[arg(short, long, conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix", "ulid", "nanoid", "nanoid_size", "nanoid_alphabet"])]
     symbol: bool,
 
     /// Include digits 2-9 (visually unambiguous)
-    #[arg(short, long, conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix", "ulid"])]
+    #[arg(short, long, conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix", "ulid", "nanoid", "nanoid_size", "nanoid_alphabet"])]
     number: bool,
 
     /// Number of items to generate (max: 10 000)
@@ -110,8 +123,31 @@ struct Args {
     typeid_prefix: Option<String>,
 
     /// Generate a ULID (monotonic, 48-bit timestamp + 80-bit entropy, Crockford Base32)
-    #[arg(long, conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix", "length"])]
+    #[arg(long, conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix", "length", "nanoid", "nanoid_size", "nanoid_alphabet"])]
     ulid: bool,
+
+    /// Generate a `NanoID` (URL-safe, cryptographically random)
+    #[arg(
+        long,
+        conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix", "ulid", "length"]
+    )]
+    nanoid: bool,
+
+    /// `NanoID` character count [default: 21]
+    #[arg(
+        long,
+        value_name = "SIZE",
+        conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix", "ulid"]
+    )]
+    nanoid_size: Option<usize>,
+
+    /// Custom alphabet for `NanoID` (2–255 unique printable ASCII chars)
+    #[arg(
+        long,
+        value_name = "ALPHABET",
+        conflicts_with_all = ["uuid", "uuid_version", "typeid", "typeid_prefix", "ulid"]
+    )]
+    nanoid_alphabet: Option<String>,
 }
 
 struct Config {
@@ -297,14 +333,13 @@ fn mono_state() -> &'static Mutex<MonotonicState> {
 }
 
 /// Returns the current Unix timestamp in milliseconds.
-fn now_ms() -> u64 {
-    u64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system clock is before the UNIX epoch")
-            .as_millis(),
-    )
-    .expect("timestamp overflows u64 (~584 million years from epoch)")
+fn now_ms() -> Result<u64> {
+    let duration = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| anyhow::anyhow!("system clock is before the UNIX epoch"))?;
+
+    u64::try_from(duration.as_millis())
+        .map_err(|_| anyhow::anyhow!("timestamp overflows u64 (~584 million years from epoch)"))
 }
 
 /// Core monotonic `UUIDv7` byte generator (RFC 9562 §6.2 Method 1).
@@ -324,12 +359,14 @@ fn next_v7_bytes(rng: &mut impl Rng) -> Result<[u8; 16]> {
     // A real clock must advance within this window; if not, the system is broken.
     const MAX_SPIN_CYCLES: u32 = 50;
 
-    let mut state = mono_state().lock().expect("MonotonicState mutex poisoned");
+    let mut state = mono_state()
+        .lock()
+        .map_err(|_| anyhow::anyhow!("MonotonicState mutex poisoned"))?;
     let mut spins: u32 = 0;
     let mut cycles: u32 = 0;
 
     let (ms, counter) = loop {
-        let ms = now_ms().max(state.last_ms); // clamp: never go backward
+        let ms = now_ms()?.max(state.last_ms); // clamp: never go backward
 
         if ms > state.last_ms {
             // Clock advanced — seed counter randomly per RFC 9562 §6.2.
@@ -364,7 +401,9 @@ fn next_v7_bytes(rng: &mut impl Rng) -> Result<[u8; 16]> {
                 );
             }
         }
-        state = mono_state().lock().expect("MonotonicState mutex poisoned");
+        state = mono_state()
+            .lock()
+            .map_err(|_| anyhow::anyhow!("MonotonicState mutex poisoned"))?;
     };
     drop(state); // release ASAP; don't hold the lock while building the UUID bytes
     let ms_be = ms.to_be_bytes(); // [2..8] = lower 48 bits
@@ -553,12 +592,14 @@ fn ulid_increment(entropy: &mut [u8; 10]) -> bool {
 fn next_ulid_bytes(rng: &mut impl Rng) -> Result<[u8; 26]> {
     const MAX_SPIN_CYCLES: u32 = 50;
 
-    let mut state = ulid_state().lock().expect("UlidState mutex poisoned");
+    let mut state = ulid_state()
+        .lock()
+        .map_err(|_| anyhow::anyhow!("UlidState mutex poisoned"))?;
     let mut spins: u32 = 0;
     let mut cycles: u32 = 0;
 
     let (ms, entropy_snapshot) = loop {
-        let ms = now_ms().max(state.last_ms); // clamp: never go backward
+        let ms = now_ms()?.max(state.last_ms); // clamp: never go backward
 
         if ms > state.last_ms {
             // New millisecond — reseed entropy from CSPRNG.
@@ -588,7 +629,9 @@ fn next_ulid_bytes(rng: &mut impl Rng) -> Result<[u8; 26]> {
         } else {
             std::hint::spin_loop();
         }
-        state = ulid_state().lock().expect("UlidState mutex poisoned");
+        state = ulid_state()
+            .lock()
+            .map_err(|_| anyhow::anyhow!("UlidState mutex poisoned"))?;
     };
 
     drop(state); // release ASAP; encoding is pure computation
@@ -633,6 +676,136 @@ fn gen_ulid(rng: &mut impl Rng) -> String {
         .to_owned()
 }
 
+/// Validates a custom `NanoID` alphabet.
+///
+/// Rules:
+/// - Length in [`NANOID_ALPHABET_MIN`, `NANOID_ALPHABET_MAX`]
+/// - All bytes are printable ASCII (0x20–0x7E)
+/// - No duplicate characters
+fn validate_nanoid_alphabet(alphabet: &[u8]) -> Result<()> {
+    let len = alphabet.len();
+    if len < NANOID_ALPHABET_MIN {
+        bail!("NanoID alphabet is too short ({len} char(s)); minimum is {NANOID_ALPHABET_MIN}.");
+    }
+    if len > NANOID_ALPHABET_MAX {
+        bail!("NanoID alphabet is too long ({len} chars); maximum is {NANOID_ALPHABET_MAX}.");
+    }
+    for &b in alphabet {
+        if !(0x20..=0x7E).contains(&b) {
+            bail!("NanoID alphabet contains non-printable or non-ASCII byte 0x{b:02X}.");
+        }
+    }
+
+    let mut sorted = alphabet.to_vec();
+    sorted.sort_unstable();
+    if let Some(w) = sorted.windows(2).find(|w| w[0] == w[1]) {
+        bail!(
+            "NanoID alphabet contains duplicate character {:?}.",
+            char::from(w[0])
+        );
+    }
+    Ok(())
+}
+
+/// Fast path — default 64-char URL-safe alphabet.
+#[must_use]
+fn nanoid_default(size: usize, rng: &mut impl Rng) -> String {
+    let mut bytes = vec![0u8; size];
+    rng.fill_bytes(&mut bytes);
+
+    let mut id = String::with_capacity(size);
+    for b in bytes {
+        id.push(char::from(NANOID_URL_ALPHABET[usize::from(b & 63)]));
+    }
+    id
+}
+
+/// General path — custom alphabet with rejection sampling.
+///
+/// Mirrors upstream `NanoID` customRandom:
+/// - mask = smallest 2^k − 1 where mask >= `alphabet.len()` − 1
+/// - step = ceil(1.6 × mask × size / `alphabet.len()`)
+/// - sample bytes, keep alphabet[byte & mask] when index is in-range
+#[must_use]
+fn nanoid_custom(alphabet: &[u8], size: usize, rng: &mut impl Rng) -> String {
+    debug_assert!(!alphabet.is_empty(), "alphabet must be non-empty");
+    debug_assert!(size > 0, "size must be > 0");
+
+    let alpha_len = alphabet.len();
+    let alpha_len_u32 = u32::try_from(alpha_len).expect("alphabet length <= 255 fits u32");
+    let clz = ((alpha_len_u32 - 1) | 1).leading_zeros();
+    let mask_u32 = (2u32 << (31 - clz)) - 1;
+    let mask = usize::try_from(mask_u32).expect("u32 mask fits usize");
+
+    let step = (8 * mask * size).div_ceil(5 * alpha_len).max(1);
+    let mut batch = vec![0u8; step];
+    let mut id = String::with_capacity(size);
+
+    while id.len() < size {
+        rng.fill_bytes(&mut batch);
+        for &b in batch.iter().rev() {
+            let index = usize::from(b) & mask;
+            if index < alpha_len {
+                id.push(char::from(alphabet[index]));
+                if id.len() >= size {
+                    return id;
+                }
+            }
+        }
+    }
+    id
+}
+
+fn run_nanoid(args: &Args) -> Result<()> {
+    let count = resolve_count(args.count)?;
+
+    let size = match args.nanoid_size {
+        Some(v) if v < NANOID_MIN_SIZE => {
+            bail!("--nanoid-size {v} is below the minimum of {NANOID_MIN_SIZE}.")
+        }
+        Some(v) if v > NANOID_MAX_SIZE => {
+            bail!("--nanoid-size {v} exceeds the maximum of {NANOID_MAX_SIZE}.")
+        }
+        Some(v) => v,
+        None => NANOID_DEFAULT_SIZE,
+    };
+
+    let custom_alphabet = if let Some(ref s) = args.nanoid_alphabet {
+        let bytes = s.as_bytes().to_vec();
+        validate_nanoid_alphabet(&bytes)?;
+        Some(bytes)
+    } else {
+        None
+    };
+
+    if args.verbose {
+        match &custom_alphabet {
+            Some(alphabet) => eprintln!(
+                "NanoID  size={size}  alphabet={} ({} chars, custom)",
+                String::from_utf8_lossy(alphabet),
+                alphabet.len(),
+            ),
+            None => eprintln!("NanoID  size={size}  alphabet=URL-safe (64 chars, default)"),
+        }
+    }
+
+    let stdout = std::io::stdout();
+    let mut handle = std::io::BufWriter::with_capacity(65_536, stdout.lock());
+    let mut rng = rand::rng();
+
+    for _ in 0..count {
+        let id = match &custom_alphabet {
+            Some(alphabet) => nanoid_custom(alphabet, size, &mut rng),
+            None => nanoid_default(size, &mut rng),
+        };
+        handle.write_all(id.as_bytes())?;
+        handle.write_all(b"\n")?;
+    }
+    handle.flush()?;
+
+    Ok(())
+}
+
 fn run_ulid(args: &Args) -> Result<()> {
     let count = resolve_count(args.count)?;
 
@@ -670,6 +843,8 @@ fn run() -> Result<()> {
     let args = Args::parse();
     if args.ulid {
         run_ulid(&args)
+    } else if args.nanoid || args.nanoid_size.is_some() || args.nanoid_alphabet.is_some() {
+        run_nanoid(&args)
     } else if args.typeid || args.typeid_prefix.is_some() {
         run_typeid(&args)
     } else if args.uuid || args.uuid_version.is_some() {
@@ -1321,7 +1496,7 @@ mod tests {
         //   (b) The 5 generated UUIDs are still strictly increasing.
         let mut rng = rand::rng();
 
-        let future_ms = now_ms() + 5_000;
+        let future_ms = now_ms().expect("current time must be available") + 5_000;
         {
             let mut state = mono_state().lock().expect("mutex poisoned");
             state.last_ms = future_ms;
@@ -1451,7 +1626,7 @@ mod tests {
         let _reset = UlidStateReset;
         let mut rng = rand::rng();
 
-        let future_ms = now_ms() + 5_000;
+        let future_ms = now_ms().expect("current time must be available") + 5_000;
         {
             let mut s = ulid_state().lock().unwrap();
             s.last_ms = future_ms;
@@ -1502,5 +1677,145 @@ mod tests {
         let buf = encode_ulid(0, &[0u8; 10]);
         let s = std::str::from_utf8(&buf).unwrap();
         assert_eq!(s, "00000000000000000000000000");
+    }
+
+    // ---------------------------------------------------------------------------
+    // NanoID tests
+    // ---------------------------------------------------------------------------
+
+    const NANOID_URL_CHARS: &str =
+        "useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict";
+
+    #[test]
+    fn nanoid_default_correct_length() {
+        let mut rng = make_test_rng();
+        for size in [1, 21, 36, 128] {
+            let id = nanoid_default(size, &mut rng);
+            assert_eq!(id.len(), size, "expected length {size}, got {}", id.len());
+        }
+    }
+
+    #[test]
+    fn nanoid_default_chars_in_url_alphabet() {
+        let mut rng = make_test_rng();
+        for _ in 0..50 {
+            let id = nanoid_default(21, &mut rng);
+            for ch in id.chars() {
+                assert!(
+                    NANOID_URL_CHARS.contains(ch),
+                    "char {ch:?} is not in the URL-safe alphabet: {id}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn nanoid_default_uniqueness_smoke() {
+        let mut rng = rand::rng();
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..200 {
+            assert!(
+                seen.insert(nanoid_default(21, &mut rng)),
+                "duplicate NanoID — RNG failure"
+            );
+        }
+    }
+
+    #[test]
+    fn nanoid_custom_correct_length() {
+        let alpha = b"abcdefghij";
+        let mut rng = make_test_rng();
+        for size in [1, 10, 21, 100] {
+            let id = nanoid_custom(alpha, size, &mut rng);
+            assert_eq!(id.len(), size, "expected length {size}, got {}", id.len());
+        }
+    }
+
+    #[test]
+    fn nanoid_custom_chars_only_from_alphabet() {
+        let alpha = b"AEIOU12345";
+        let mut rng = make_test_rng();
+        for _ in 0..100 {
+            let id = nanoid_custom(alpha, 30, &mut rng);
+            for ch in id.chars() {
+                assert!(
+                    alpha.contains(&(ch as u8)),
+                    "char {ch:?} not in custom alphabet: {id}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn nanoid_custom_no_bias_uniform_distribution() {
+        let alpha = b"AB";
+        let mut rng = rand::rng();
+        let total = 10_000usize;
+        let id = nanoid_custom(alpha, total, &mut rng);
+        let a_count = id.chars().filter(|&c| c == 'A').count();
+        let ratio = a_count as f64 / total as f64;
+        assert!(
+            (0.45..=0.55).contains(&ratio),
+            "distribution bias detected: A appeared {:.1}% of the time (expected ~50%)",
+            ratio * 100.0
+        );
+    }
+
+    #[test]
+    fn nanoid_custom_power_of_two_alphabet() {
+        let alpha: Vec<u8> = (b'a'..=b'z').chain(b"012345".iter().copied()).collect();
+        assert_eq!(alpha.len(), 32);
+        let mut rng = make_test_rng();
+        let id = nanoid_custom(&alpha, 50, &mut rng);
+        assert_eq!(id.len(), 50);
+        for ch in id.chars() {
+            assert!(
+                alpha.contains(&(ch as u8)),
+                "char {ch:?} not in 32-char alphabet"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_nanoid_alphabet_rejects_empty() {
+        assert!(validate_nanoid_alphabet(b"").is_err());
+    }
+
+    #[test]
+    fn validate_nanoid_alphabet_rejects_single_char() {
+        assert!(validate_nanoid_alphabet(b"a").is_err());
+    }
+
+    #[test]
+    fn validate_nanoid_alphabet_rejects_duplicates() {
+        assert!(validate_nanoid_alphabet(b"aab").is_err());
+    }
+
+    #[test]
+    fn validate_nanoid_alphabet_rejects_non_printable() {
+        assert!(validate_nanoid_alphabet(b"ab\x01").is_err());
+    }
+
+    #[test]
+    fn validate_nanoid_alphabet_accepts_valid() {
+        assert!(validate_nanoid_alphabet(b"abcdefghij").is_ok());
+        assert!(validate_nanoid_alphabet(b"0123456789").is_ok());
+        assert!(validate_nanoid_alphabet(b"!@#$%^&*()").is_ok());
+    }
+
+    #[test]
+    fn nanoid_mask_correctness_non_power_of_two() {
+        let alpha: Vec<u8> = (b'a'..b'a' + 30).collect();
+        assert_eq!(alpha.len(), 30);
+        let mut rng = rand::rng();
+        for _ in 0..200 {
+            let id = nanoid_custom(&alpha, 21, &mut rng);
+            for ch in id.chars() {
+                assert!(
+                    alpha.contains(&(ch as u8)),
+                    "out-of-alphabet char {ch:?} — mask computation wrong"
+                );
+            }
+        }
     }
 }

@@ -14,6 +14,8 @@ const TYPEID_ALPHABET: &str = "0123456789abcdefghjkmnpqrstvwxyz";
 
 /// Crockford Base32 alphabet, uppercase (ULID spec).
 const ULID_ALPHABET: &str = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const NANOID_URL_ALPHABET: &str =
+    "useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict";
 
 fn assert_valid_suffix(suffix: &str, context: &str) {
     assert_eq!(
@@ -51,6 +53,20 @@ fn assert_valid_ulid(ulid: &str, context: &str) {
         first <= '7',
         "{context}: first ULID char {first:?} exceeds '7' — top bit of 48-bit field must be 0"
     );
+}
+
+fn assert_valid_nanoid(id: &str, expected_size: usize, context: &str) {
+    assert_eq!(
+        id.len(),
+        expected_size,
+        "{context}: NanoID must be {expected_size} chars, got: {id:?}"
+    );
+    for ch in id.chars() {
+        assert!(
+            NANOID_URL_ALPHABET.contains(ch),
+            "{context}: NanoID char {ch:?} is not in the default URL-safe alphabet"
+        );
+    }
 }
 
 /// `--typeid-prefix <prefix>` produces a line of the form `<prefix>_<26-char-suffix>`.
@@ -230,6 +246,136 @@ fn run_ulid_conflicts_with_length() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// --nanoid integration tests
+// ---------------------------------------------------------------------------
+
+/// --nanoid emits one default-length (21) URL-safe NanoID.
+#[test]
+fn run_nanoid_single_default_output() {
+    let output = pgen()
+        .arg("--nanoid")
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(
+        output.status.success(),
+        "expected exit 0, got {:?}\nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout must be UTF-8");
+    let line = stdout.trim_end_matches('\n');
+    assert_valid_nanoid(line, 21, "run_nanoid_single_default_output");
+}
+
+/// --nanoid-size changes the output length and implies NanoID mode.
+#[test]
+fn run_nanoid_size_implies_mode() {
+    let output = pgen()
+        .args(["--nanoid-size", "32"])
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(
+        output.status.success(),
+        "expected exit 0, got {:?}",
+        output.status
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout must be UTF-8");
+    let line = stdout.trim_end_matches('\n');
+    assert_valid_nanoid(line, 32, "run_nanoid_size_implies_mode");
+}
+
+/// --nanoid --count 5 prints exactly 5 valid NanoIDs.
+#[test]
+fn run_nanoid_count_five() {
+    let output = pgen()
+        .args(["--nanoid", "--count", "5"])
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(
+        output.status.success(),
+        "expected exit 0, got {:?}",
+        output.status
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout must be UTF-8");
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 5, "expected 5 NanoIDs, got {}", lines.len());
+    for (i, line) in lines.iter().enumerate() {
+        assert_valid_nanoid(line, 21, &format!("run_nanoid_count_five[{i}]"));
+    }
+}
+
+/// --nanoid-alphabet constrains output to the provided alphabet.
+#[test]
+fn run_nanoid_custom_alphabet() {
+    let output = pgen()
+        .args([
+            "--nanoid",
+            "--nanoid-alphabet",
+            "ABC123",
+            "--nanoid-size",
+            "40",
+        ])
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(
+        output.status.success(),
+        "expected exit 0, got {:?}\nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout must be UTF-8");
+    let line = stdout.trim_end_matches('\n');
+    assert_eq!(line.len(), 40, "expected 40-char NanoID, got: {line:?}");
+    for ch in line.chars() {
+        assert!(
+            "ABC123".contains(ch),
+            "custom NanoID char {ch:?} is outside provided alphabet"
+        );
+    }
+}
+
+/// Invalid custom alphabet should fail and not emit output.
+#[test]
+fn run_nanoid_rejects_invalid_alphabet() {
+    let output = pgen()
+        .args(["--nanoid", "--nanoid-alphabet", "AAB"])
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit for duplicate alphabet characters"
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "expected no stdout on invalid alphabet"
+    );
+}
+
+/// --nanoid --verbose prints NanoID descriptor to stderr.
+#[test]
+fn run_nanoid_verbose_to_stderr() {
+    let output = pgen()
+        .args(["--nanoid", "--verbose"])
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(output.status.success());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("NanoID"),
+        "expected NanoID descriptor in stderr, got: {stderr}"
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout must be UTF-8");
+    let line = stdout.trim_end_matches('\n');
+    assert_valid_nanoid(line, 21, "run_nanoid_verbose_to_stderr");
+}
+
 /// --help includes a distribution warning for pooled password generation.
 #[test]
 fn help_mentions_pool_weighting_note() {
@@ -318,6 +464,7 @@ fn run_rejects_count_zero_in_all_modes() {
         &["--uuid", "--count", "0"],
         &["--typeid", "--count", "0"],
         &["--ulid", "--count", "0"],
+        &["--nanoid", "--count", "0"],
     ];
 
     for args in cases {
@@ -356,7 +503,7 @@ fn run_rejects_count_above_maximum() {
 #[test]
 fn run_rejects_conflicting_modes() {
     let output = pgen()
-        .args(["--uuid", "--ulid"])
+        .args(["--uuid", "--nanoid"])
         .output()
         .expect("failed to spawn pgen");
     assert!(
