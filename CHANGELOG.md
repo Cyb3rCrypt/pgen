@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--nanoid` mode for generating NanoID-style IDs using the default
+  URL-safe alphabet and default size `21`.
+- `--nanoid-size` and `--nanoid-alphabet` options, including custom alphabet
+  validation (printable ASCII, unique chars, length 2–255).
+- NanoID generation paths inspired by upstream algorithm design: fast default path
+  (`byte & 63`) and rejection-sampling custom path using dynamic `mask` and
+  `step`.
+- Unit and CLI integration tests covering NanoID output shape, custom alphabet
+  behavior, conflicts, and argument validation.
+
 ## [1.3.1] — 2026-02-27
 
 ### Fixed
