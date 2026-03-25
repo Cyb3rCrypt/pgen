@@ -7,7 +7,7 @@ backported.
 
 | Version | Supported |
 |---------|-----------|
-| Latest (`1.3.x`) | ✅ |
+| Latest (`1.5.x`) | ✅ |
 | Older | ❌ |
 
 ## Reporting a Vulnerability
@@ -39,7 +39,7 @@ a revised timeline before the deadline.
 
 Vulnerabilities in the following are in scope:
 
-- Weak or predictable output from `pgen pass` / `pgen uuid` / `pgen typeid`
+- Weak or predictable output from any ID generation mode (Passwords, UUIDs, TypeIDs, ULIDs, NanoIDs, KSUIDs)
 - Insecure use of the system CSPRNG (`getrandom`)
 - Memory exposure of generated secrets (e.g. heap residue, log output)
 - Dependency vulnerabilities that affect the above

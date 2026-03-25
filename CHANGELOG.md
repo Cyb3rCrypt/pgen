@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-03-26
+
+### Added
+
+- `--ksuid`: generate a Segment KSUID — a 27-character base62 encoded string combining a 32-bit timestamp (seconds since 2014) and 128-bit cryptographically secure random payload.
+- `--ksuid-ms`: generate a `KsuidMs` — a Svix-compatible monotonic extension sacrificing 1 byte of payload for ~4ms sub-second precision to improve sorting guarantees, while maintaining Segment binary compatibility.
+- Zero-allocation string formatting utilizing 27-byte stack arrays and disjoint-bit math for rapid base62 conversion.
+- Full suite of CLI integration tests, argument conflict validations, boundary checks, and encoding/decoding round-trip tests for KSUID.
+- Dedicated `--verbose` output for KSUID modes showing specification metadata.
+
 ## [1.4.0] — 2026-03-01
 
 ### Added

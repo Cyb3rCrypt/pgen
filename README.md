@@ -1,10 +1,10 @@
 # pgen
 
-> A fast, cryptographically secure command-line password, UUID, TypeID, ULID, and NanoID generator.
+> A fast, cryptographically secure command-line password, UUID, TypeID, ULID, NanoID, and KSUID generator.
 
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.4.0-green.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-1.5.0-green.svg)](Cargo.toml)
 [![CI](https://github.com/sharma-vikram/pgen/actions/workflows/ci.yml/badge.svg)](https://github.com/sharma-vikram/pgen/actions/workflows/ci.yml)
 
 ## Design & Philosophy
@@ -17,6 +17,8 @@
 - **TypeID**: Implements spec v0.3.0 — a validated lowercase ASCII prefix, a `_` separator, and a 26-character Crockford base32-encoded UUID v7 suffix. Monotonic ordering is inherited from the v7 timestamp + counter.
 - **ULID**: Implements the [ULID spec](https://github.com/ulid/spec) — a 26-character Crockford Base32 encoded identifier with a 48-bit Unix millisecond timestamp and 80-bit random entropy. Monotonic ordering within the same millisecond is guaranteed by ripple-carry incrementing the entropy buffer, matching the spec's monotonicity extension.
 - **NanoID**: Implements NanoID-compatible generation with the default URL-safe alphabet (`A-Za-z0-9_-`) and optional custom alphabets using rejection sampling to avoid modulo bias.
+- **KSUID**: Implements the Segment KSUID standard — a 27-character base62 encoded string combining a 32-bit timestamp (seconds since 2014) and 128 bits of cryptographically secure random payload. Zero-allocation formatting paths are heavily utilized.
+- **KsuidMs**: A Svix-compatible monotonic extension that sacrifices 1 byte of the standard KSUID payload for a 4ms sub-second fractional counter, providing finer temporal sorting granularity while preserving exact 27-character Segment KSUID binary decoding compatibility.
 
 ## Installation
 
@@ -78,6 +80,8 @@ pgen --length <LENGTH> [OPTIONS]
 | `--nanoid` | | Generate a NanoID (URL-safe by default) | |
 | `--nanoid-size <N>` | | NanoID length (minimum: 1, maximum: 4096) | `21` |
 | `--nanoid-alphabet <ALPHABET>` | | Custom NanoID alphabet (2–255 unique printable ASCII chars) | default URL-safe |
+| `--ksuid` | | Generate a KSUID (K-Sortable Unique ID, 27-char base62, Segment-compatible) | |
+| `--ksuid-ms` | | Generate a `KsuidMs` (4ms sub-second precision, 15-byte payload, Svix-compatible) | |
 | `--help` | `-h` | Print help | |
 | `--version` | `-V` | Print version | |
 
@@ -215,6 +219,26 @@ pgen --nanoid --nanoid-alphabet ABC123 --nanoid-size 16
 AC21B3A12C31AB2C
 ```
 
+**Generate a KSUID:**
+```
+pgen --ksuid
+```
+```
+3BSGB9Ov0Y1QEgoXb993522G2PH
+```
+
+**Generate 5 KsuidMs (4ms precision):**
+```
+pgen --ksuid-ms --count 5
+```
+```
+3BSGC23KzC54NDJrCrSvmVzw2K4
+3BSGC24cIo8VRgG1sPoOoHaHbbK
+3BSGC24Yoa3T2hzekUsoU6TuOHd
+3BSGC23ReVuoeZHWV3vdDww9Vjz
+3BSGC23azAu7VsGhKLzOQSuRZZM
+```
+
 ---
 
 ## Character Sets
@@ -238,6 +262,14 @@ CI runs on every push and pull request to `main`: `cargo test --all-features -- 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a branch or PR. It
 covers branch naming, commit message format, pull request rules, and the
 release process.
+
+All notable changes to this project will be documented in the [CHANGELOG.md](CHANGELOG.md).
+
+---
+
+## Security
+
+As a cryptographic tool, security is a top priority. If you discover a security vulnerability, please do NOT open a public issue. Let us know by following the instructions in our [Security Policy](SECURITY.md).
 
 ---
 

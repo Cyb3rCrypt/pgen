@@ -1,12 +1,12 @@
 [package]
 name = "pgen"
-version = "1.4.0"
+version = "1.5.0"
 edition = "2024"
 authors = ["Vikram Sharma"]
 rust-version = "1.85"
-description = "Cryptographically random password, UUID, TypeID, ULID, and NanoID generator"
+description = "Cryptographically random password, UUID, TypeID, ULID, NanoID, and KSUID generator"
 repository = "https://github.com/sharma-vikram/pgen"
-keywords = ["password", "generator", "cli", "cryptography", "security"]
+keywords = ["password", "generator", "cli", "cryptography", "ksuid"]
 categories = ["command-line-utilities", "cryptography"]
 license = "MIT"
 
@@ -30,4 +30,3 @@ pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 cargo = { level = "warn", priority = -1 }
 multiple_crate_versions = "allow" # getrandom's WASI target graph pulls wasip2/wasip3 which currently resolve to wit-bindgen 0.46 and 0.51
-
