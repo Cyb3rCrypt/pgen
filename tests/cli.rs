@@ -465,6 +465,8 @@ fn run_rejects_count_zero_in_all_modes() {
         &["--typeid", "--count", "0"],
         &["--ulid", "--count", "0"],
         &["--nanoid", "--count", "0"],
+        &["--ksuid", "--count", "0"],
+        &["--ksuid-ms", "--count", "0"],
     ];
 
     for args in cases {
@@ -509,5 +511,138 @@ fn run_rejects_conflicting_modes() {
     assert!(
         !output.status.success(),
         "expected non-zero exit for conflicting mode flags"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// --ksuid / --ksuid-ms integration tests
+// ---------------------------------------------------------------------------
+
+const BASE62_CHARS: &str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+fn assert_valid_ksuid(id: &str, context: &str) {
+    assert_eq!(
+        id.len(),
+        27,
+        "{context}: KSUID must be 27 chars, got: {id:?}"
+    );
+    for ch in id.chars() {
+        assert!(
+            BASE62_CHARS.contains(ch),
+            "{context}: KSUID char {ch:?} is not in the base62 alphabet"
+        );
+    }
+}
+
+/// --ksuid produces a single valid 27-character base62 KSUID.
+#[test]
+fn run_ksuid_single_output() {
+    let output = pgen()
+        .arg("--ksuid")
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(
+        output.status.success(),
+        "expected exit 0, got {:?}\nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout must be UTF-8");
+    let line = stdout.trim_end_matches('\n');
+    assert_valid_ksuid(line, "run_ksuid_single_output");
+}
+
+/// --ksuid-ms produces a single valid 27-character base62 KSUID (`KsuidMs` variant).
+#[test]
+fn run_ksuid_ms_single_output() {
+    let output = pgen()
+        .arg("--ksuid-ms")
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(
+        output.status.success(),
+        "expected exit 0, got {:?}\nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout must be UTF-8");
+    let line = stdout.trim_end_matches('\n');
+    assert_valid_ksuid(line, "run_ksuid_ms_single_output");
+}
+
+/// --ksuid --count 5 produces exactly 5 valid KSUIDs.
+#[test]
+fn run_ksuid_count_five() {
+    let output = pgen()
+        .args(["--ksuid", "--count", "5"])
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(
+        output.status.success(),
+        "expected exit 0, got {:?}",
+        output.status
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout must be UTF-8");
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 5, "expected 5 KSUIDs, got {}", lines.len());
+    for (i, line) in lines.iter().enumerate() {
+        assert_valid_ksuid(line, &format!("run_ksuid_count_five[{i}]"));
+    }
+}
+
+/// --ksuid --verbose writes a descriptor to stderr and a valid KSUID to stdout.
+#[test]
+fn run_ksuid_verbose_to_stderr() {
+    let output = pgen()
+        .args(["--ksuid", "--verbose"])
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("KSUID"),
+        "expected KSUID descriptor in stderr, got: {stderr}"
+    );
+    let stdout = String::from_utf8(output.stdout).expect("stdout must be UTF-8");
+    let line = stdout.trim_end_matches('\n');
+    assert_valid_ksuid(line, "run_ksuid_verbose_to_stderr");
+}
+
+/// --ksuid conflicts with --length (password mode).
+#[test]
+fn run_ksuid_conflicts_with_length() {
+    let output = pgen()
+        .args(["--ksuid", "--length", "20"])
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit when --ksuid combined with --length"
+    );
+}
+
+/// --ksuid conflicts with --uuid.
+#[test]
+fn run_ksuid_conflicts_with_uuid() {
+    let output = pgen()
+        .args(["--ksuid", "--uuid"])
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit when --ksuid combined with --uuid"
+    );
+}
+
+/// --ksuid and --ksuid-ms are mutually exclusive.
+#[test]
+fn run_ksuid_conflicts_with_ksuid_ms() {
+    let output = pgen()
+        .args(["--ksuid", "--ksuid-ms"])
+        .output()
+        .expect("failed to spawn pgen");
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit when --ksuid combined with --ksuid-ms"
     );
 }
