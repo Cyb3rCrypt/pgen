@@ -1,0 +1,13 @@
+# deny.toml - tailored for pgen (MIT-licensed Rust CLI using clap + rand)
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "ISC",
+    "0BSD",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+]
