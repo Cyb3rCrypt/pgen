@@ -7,13 +7,33 @@ these rules. The CI pipeline enforces what it can; code review enforces the rest
 
 ## Table of Contents
 
-1. [Branching Model](#branching-model)
-2. [Branch Naming](#branch-naming)
-3. [Commit Messages](#commit-messages)
-4. [Pull Requests](#pull-requests)
-5. [Releasing](#releasing)
-6. [Code Style](#code-style)
-7. [Quick Reference](#quick-reference)
+1. [Local Setup](#local-setup)
+2. [Branching Model](#branching-model)
+3. [Branch Naming](#branch-naming)
+4. [Commit Messages](#commit-messages)
+5. [Pull Requests](#pull-requests)
+6. [Releasing](#releasing)
+7. [Code Style](#code-style)
+8. [Quick Reference](#quick-reference)
+9. [Document History](#document-history)
+
+---
+
+## Local Setup
+
+To contribute to `passid`, you will need to set up your local development environment.
+
+1. **Install Rust:** Use [rustup](https://rustup.rs/) to install the latest stable Rust toolchain.
+2. **Clone the repository:**
+   ```sh
+   git clone https://github.com/sharma-vikram/passid.git
+   cd passid
+   ```
+3. **Verify the build and tests:**
+   ```sh
+   cargo build
+   cargo test --all-features
+   ```
 
 ---
 
@@ -178,14 +198,14 @@ format will need updating.
 
 ### Merge strategy
 
-| Scenario | Strategy |
-|----------|----------|
-| Single-commit PR | Merge commit or squash (either is fine) |
-| Multi-commit PR with clean, atomic commits | Merge commit — preserves history |
-| Multi-commit PR with messy/WIP commits | Squash merge — produces one clean commit |
+This project enforces a strict **Squash and Merge** policy for all pull requests.
 
-> Rebase-merge is **not** used. It rewrites SHAs, which makes `git bisect`
-> and blame harder to reason about.
+> **Note:** This strict policy was enforced starting March 29, 2026 (post-v1.6.0). Earlier repository history may contain standard merge commits and duplicated release bump logging.
+
+- **Why:** It condenses multi-commit PRs (WIPs, typo fixes, review adjustments) into a single, clean commit on `main`. This prevents duplicate merge commits and keeps the Git history strictly linear, making `git bisect` much easier.
+- **How:** The maintainer will squash merge the PR. Ensure your PR title follows the Conventional Commits format exactly, as GitHub will use it for the final squashed commit message.
+
+> Standard merge commits and rebase-merges are **not** used.
 
 ---
 
