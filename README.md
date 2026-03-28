@@ -28,11 +28,11 @@ Download the latest release for your platform from the [Releases](../../releases
 
 | Platform | File |
 |----------|------|
-| Windows x86-64 | `passid-vX.Y.Z-x86_64-pc-windows-msvc.zip` |
-| Linux x86-64 | `passid-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux aarch64 | `passid-vX.Y.Z-aarch64-unknown-linux-gnu.tar.gz` |
-| macOS x86-64 | `passid-vX.Y.Z-x86_64-apple-darwin.tar.gz` |
-| macOS Apple Silicon | `passid-vX.Y.Z-aarch64-apple-darwin.tar.gz` |
+| Windows x86-64 | `passid-v1.6.0-x86_64-pc-windows-msvc.zip` |
+| Linux x86-64 | `passid-v1.6.0-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux aarch64 | `passid-v1.6.0-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS x86-64 | `passid-v1.6.0-x86_64-apple-darwin.tar.gz` |
+| macOS Apple Silicon | `passid-v1.6.0-aarch64-apple-darwin.tar.gz` |
 
 ### Build from source
 
@@ -253,7 +253,7 @@ passid --ksuid-ms --count 5
 
 ---
 
-CI runs on every push and pull request to `main`: `cargo test --all-features -- --test-threads=1`, `cargo fmt --check`, `cargo clippy --all-features -- -D warnings`, and `rustsec/audit-check`. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+CI runs on every push and pull request to `main`: `cargo test --all-features`, `cargo fmt --check`, `cargo clippy --all-features -- -D warnings`, `rustsec/audit-check`, and `cargo deny check`. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ---
 
@@ -270,6 +270,21 @@ All notable changes to this project will be documented in the [CHANGELOG.md](CHA
 ## Security
 
 As a cryptographic tool, security is a top priority. If you discover a security vulnerability, please do NOT open a public issue. Let us know by following the instructions in our [Security Policy](SECURITY.md).
+
+---
+
+## Project Rename Notice
+
+This project was previously named **`pgen`**. It was renamed to **`passid`** in March 2026.
+
+**Why:**
+- Avoided name collisions with other password generators
+- `passid` clearly communicates **pass**words + modern **id**entifiers
+- Better branding for the DevOps community
+
+**Impact:** All CLI flags, output format, and exit codes are **unchanged**. GitHub automatically redirects old repository URLs (`sharma-vikram/pgen` → `sharma-vikram/passid`). Old release assets remain accessible.
+
+Update any scripts, aliases, or CI pipelines that invoke `pgen` to use `passid` instead.
 
 ---
 
