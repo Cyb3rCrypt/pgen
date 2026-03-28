@@ -1,13 +1,13 @@
 //! CLI integration tests — `TypeID` and ULID output validation.
 //!
-//! These tests spawn the compiled `pgen` binary and assert on stdout,
+//! These tests spawn the compiled `passid` binary and assert on stdout,
 //! stderr, and exit code, giving end-to-end coverage of the `TypeID` and
 //! `ULID` code paths that unit tests cannot exercise.
 
 use std::process::Command;
 
-fn pgen() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_pgen"))
+fn passid() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_passid"))
 }
 
 const TYPEID_ALPHABET: &str = "0123456789abcdefghjkmnpqrstvwxyz";
@@ -72,10 +72,10 @@ fn assert_valid_nanoid(id: &str, expected_size: usize, context: &str) {
 /// `--typeid-prefix <prefix>` produces a line of the form `<prefix>_<26-char-suffix>`.
 #[test]
 fn run_typeid_named_prefix_output() {
-    let output = pgen()
+    let output = passid()
         .args(["--typeid-prefix", "user"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
 
     assert!(
         output.status.success(),
@@ -104,10 +104,10 @@ fn run_typeid_named_prefix_output() {
 /// `--typeid` (no prefix) produces a single bare 26-character base32 suffix with no underscore.
 #[test]
 fn run_typeid_empty_prefix_bare_suffix() {
-    let output = pgen()
+    let output = passid()
         .arg("--typeid")
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
 
     assert!(
         output.status.success(),
@@ -143,10 +143,10 @@ fn run_typeid_rejects_invalid_prefix_before_any_output() {
     ];
 
     for bad in cases {
-        let output = pgen()
+        let output = passid()
             .args(["--typeid-prefix", bad])
             .output()
-            .expect("failed to spawn pgen");
+            .expect("failed to spawn passid");
 
         assert!(
             !output.status.success(),
@@ -167,7 +167,10 @@ fn run_typeid_rejects_invalid_prefix_before_any_output() {
 /// --ulid produces a single 26-character Crockford Base32 line.
 #[test]
 fn run_ulid_single_output() {
-    let output = pgen().arg("--ulid").output().expect("failed to spawn pgen");
+    let output = passid()
+        .arg("--ulid")
+        .output()
+        .expect("failed to spawn passid");
     assert!(
         output.status.success(),
         "expected exit 0, got {:?}\nstderr: {}",
@@ -184,10 +187,10 @@ fn run_ulid_single_output() {
 /// and the sequence is strictly lexicographically increasing.
 #[test]
 fn run_ulid_count_monotonic() {
-    let output = pgen()
+    let output = passid()
         .args(["--ulid", "--count", "5"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         output.status.success(),
         "expected exit 0, got {:?}",
@@ -212,10 +215,10 @@ fn run_ulid_count_monotonic() {
 /// --ulid --verbose writes a descriptor line to stderr, not stdout.
 #[test]
 fn run_ulid_verbose_to_stderr() {
-    let output = pgen()
+    let output = passid()
         .args(["--ulid", "--verbose"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -236,10 +239,10 @@ fn run_ulid_verbose_to_stderr() {
 /// --ulid conflicts with --length (password mode).
 #[test]
 fn run_ulid_conflicts_with_length() {
-    let output = pgen()
+    let output = passid()
         .args(["--ulid", "--length", "20"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         !output.status.success(),
         "expected non-zero exit when --ulid combined with --length"
@@ -253,10 +256,10 @@ fn run_ulid_conflicts_with_length() {
 /// --nanoid emits one default-length (21) URL-safe `NanoID`.
 #[test]
 fn run_nanoid_single_default_output() {
-    let output = pgen()
+    let output = passid()
         .arg("--nanoid")
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         output.status.success(),
         "expected exit 0, got {:?}\nstderr: {}",
@@ -272,10 +275,10 @@ fn run_nanoid_single_default_output() {
 /// --nanoid-size changes the output length and implies `NanoID` mode.
 #[test]
 fn run_nanoid_size_implies_mode() {
-    let output = pgen()
+    let output = passid()
         .args(["--nanoid-size", "32"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         output.status.success(),
         "expected exit 0, got {:?}",
@@ -290,10 +293,10 @@ fn run_nanoid_size_implies_mode() {
 /// --nanoid --count 5 prints exactly 5 valid `NanoID`s.
 #[test]
 fn run_nanoid_count_five() {
-    let output = pgen()
+    let output = passid()
         .args(["--nanoid", "--count", "5"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         output.status.success(),
         "expected exit 0, got {:?}",
@@ -311,7 +314,7 @@ fn run_nanoid_count_five() {
 /// --nanoid-alphabet constrains output to the provided alphabet.
 #[test]
 fn run_nanoid_custom_alphabet() {
-    let output = pgen()
+    let output = passid()
         .args([
             "--nanoid",
             "--nanoid-alphabet",
@@ -320,7 +323,7 @@ fn run_nanoid_custom_alphabet() {
             "40",
         ])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         output.status.success(),
         "expected exit 0, got {:?}\nstderr: {}",
@@ -342,10 +345,10 @@ fn run_nanoid_custom_alphabet() {
 /// Invalid custom alphabet should fail and not emit output.
 #[test]
 fn run_nanoid_rejects_invalid_alphabet() {
-    let output = pgen()
+    let output = passid()
         .args(["--nanoid", "--nanoid-alphabet", "AAB"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         !output.status.success(),
         "expected non-zero exit for duplicate alphabet characters"
@@ -359,10 +362,10 @@ fn run_nanoid_rejects_invalid_alphabet() {
 /// --nanoid --verbose prints `NanoID` descriptor to stderr.
 #[test]
 fn run_nanoid_verbose_to_stderr() {
-    let output = pgen()
+    let output = passid()
         .args(["--nanoid", "--verbose"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(output.status.success());
 
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -379,7 +382,10 @@ fn run_nanoid_verbose_to_stderr() {
 /// --help includes a distribution warning for pooled password generation.
 #[test]
 fn help_mentions_pool_weighting_note() {
-    let output = pgen().arg("--help").output().expect("failed to spawn pgen");
+    let output = passid()
+        .arg("--help")
+        .output()
+        .expect("failed to spawn passid");
     assert!(
         output.status.success(),
         "expected exit 0, got {:?}",
@@ -395,7 +401,7 @@ fn help_mentions_pool_weighting_note() {
 /// Running without mode flags and without `--length` should fail (password mode requires length).
 #[test]
 fn run_requires_length_in_password_mode() {
-    let output = pgen().output().expect("failed to spawn pgen");
+    let output = passid().output().expect("failed to spawn passid");
     assert!(
         !output.status.success(),
         "expected non-zero exit when no arguments are provided"
@@ -405,10 +411,10 @@ fn run_requires_length_in_password_mode() {
 /// `--length` below minimum should fail with a validation error.
 #[test]
 fn run_rejects_length_below_minimum() {
-    let output = pgen()
+    let output = passid()
         .args(["--length", "9"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         !output.status.success(),
         "expected non-zero exit for length below minimum"
@@ -423,10 +429,10 @@ fn run_rejects_length_below_minimum() {
 /// `--length` above maximum should fail with a validation error.
 #[test]
 fn run_rejects_length_above_maximum() {
-    let output = pgen()
+    let output = passid()
         .args(["--length", "4097"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         !output.status.success(),
         "expected non-zero exit for length above maximum"
@@ -441,10 +447,10 @@ fn run_rejects_length_above_maximum() {
 /// Disabling upper and lower without enabling symbols/numbers should fail.
 #[test]
 fn run_rejects_no_active_character_sets() {
-    let output = pgen()
+    let output = passid()
         .args(["--length", "16", "--no-upper", "--no-lower"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         !output.status.success(),
         "expected non-zero exit when no character sets are active"
@@ -470,7 +476,10 @@ fn run_rejects_count_zero_in_all_modes() {
     ];
 
     for args in cases {
-        let output = pgen().args(*args).output().expect("failed to spawn pgen");
+        let output = passid()
+            .args(*args)
+            .output()
+            .expect("failed to spawn passid");
         assert!(
             !output.status.success(),
             "expected non-zero exit for args: {args:?}"
@@ -486,10 +495,10 @@ fn run_rejects_count_zero_in_all_modes() {
 /// `--count` over the hard maximum should fail.
 #[test]
 fn run_rejects_count_above_maximum() {
-    let output = pgen()
+    let output = passid()
         .args(["--uuid", "--count", "10001"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         !output.status.success(),
         "expected non-zero exit for count over maximum"
@@ -504,10 +513,10 @@ fn run_rejects_count_above_maximum() {
 /// Mutually exclusive mode flags should be rejected by clap.
 #[test]
 fn run_rejects_conflicting_modes() {
-    let output = pgen()
+    let output = passid()
         .args(["--uuid", "--nanoid"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         !output.status.success(),
         "expected non-zero exit for conflicting mode flags"
@@ -537,10 +546,10 @@ fn assert_valid_ksuid(id: &str, context: &str) {
 /// --ksuid produces a single valid 27-character base62 KSUID.
 #[test]
 fn run_ksuid_single_output() {
-    let output = pgen()
+    let output = passid()
         .arg("--ksuid")
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         output.status.success(),
         "expected exit 0, got {:?}\nstderr: {}",
@@ -555,10 +564,10 @@ fn run_ksuid_single_output() {
 /// --ksuid-ms produces a single valid 27-character base62 KSUID (`KsuidMs` variant).
 #[test]
 fn run_ksuid_ms_single_output() {
-    let output = pgen()
+    let output = passid()
         .arg("--ksuid-ms")
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         output.status.success(),
         "expected exit 0, got {:?}\nstderr: {}",
@@ -573,10 +582,10 @@ fn run_ksuid_ms_single_output() {
 /// --ksuid --count 5 produces exactly 5 valid KSUIDs.
 #[test]
 fn run_ksuid_count_five() {
-    let output = pgen()
+    let output = passid()
         .args(["--ksuid", "--count", "5"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         output.status.success(),
         "expected exit 0, got {:?}",
@@ -593,10 +602,10 @@ fn run_ksuid_count_five() {
 /// --ksuid --verbose writes a descriptor to stderr and a valid KSUID to stdout.
 #[test]
 fn run_ksuid_verbose_to_stderr() {
-    let output = pgen()
+    let output = passid()
         .args(["--ksuid", "--verbose"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -611,10 +620,10 @@ fn run_ksuid_verbose_to_stderr() {
 /// --ksuid conflicts with --length (password mode).
 #[test]
 fn run_ksuid_conflicts_with_length() {
-    let output = pgen()
+    let output = passid()
         .args(["--ksuid", "--length", "20"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         !output.status.success(),
         "expected non-zero exit when --ksuid combined with --length"
@@ -624,10 +633,10 @@ fn run_ksuid_conflicts_with_length() {
 /// --ksuid conflicts with --uuid.
 #[test]
 fn run_ksuid_conflicts_with_uuid() {
-    let output = pgen()
+    let output = passid()
         .args(["--ksuid", "--uuid"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         !output.status.success(),
         "expected non-zero exit when --ksuid combined with --uuid"
@@ -637,10 +646,10 @@ fn run_ksuid_conflicts_with_uuid() {
 /// --ksuid and --ksuid-ms are mutually exclusive.
 #[test]
 fn run_ksuid_conflicts_with_ksuid_ms() {
-    let output = pgen()
+    let output = passid()
         .args(["--ksuid", "--ksuid-ms"])
         .output()
-        .expect("failed to spawn pgen");
+        .expect("failed to spawn passid");
     assert!(
         !output.status.success(),
         "expected non-zero exit when --ksuid combined with --ksuid-ms"

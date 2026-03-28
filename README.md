@@ -1,11 +1,11 @@
-# pgen
+# passid
 
-> A fast, cryptographically secure command-line password, UUID, TypeID, ULID, NanoID, and KSUID generator.
+> Fast, secure, secret-safe CLI for passwords + modern monotonic IDs (UUIDv7, ULID, KSUID, TypeID, NanoID). Built for DevOps pipelines.
 
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.5.0-green.svg)](Cargo.toml)
-[![CI](https://github.com/sharma-vikram/pgen/actions/workflows/ci.yml/badge.svg)](https://github.com/sharma-vikram/pgen/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/version-1.6.0-green.svg)](Cargo.toml)
+[![CI](https://github.com/sharma-vikram/passid/actions/workflows/ci.yml/badge.svg)](https://github.com/sharma-vikram/passid/actions/workflows/ci.yml)
 
 ## Design & Philosophy
 
@@ -28,19 +28,19 @@ Download the latest release for your platform from the [Releases](../../releases
 
 | Platform | File |
 |----------|------|
-| Windows x86-64 | `pgen-vX.Y.Z-x86_64-pc-windows-msvc.zip` |
-| Linux x86-64 | `pgen-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux aarch64 | `pgen-vX.Y.Z-aarch64-unknown-linux-gnu.tar.gz` |
-| macOS x86-64 | `pgen-vX.Y.Z-x86_64-apple-darwin.tar.gz` |
-| macOS Apple Silicon | `pgen-vX.Y.Z-aarch64-apple-darwin.tar.gz` |
+| Windows x86-64 | `passid-vX.Y.Z-x86_64-pc-windows-msvc.zip` |
+| Linux x86-64 | `passid-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux aarch64 | `passid-vX.Y.Z-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS x86-64 | `passid-vX.Y.Z-x86_64-apple-darwin.tar.gz` |
+| macOS Apple Silicon | `passid-vX.Y.Z-aarch64-apple-darwin.tar.gz` |
 
 ### Build from source
 
 **Prerequisites:** [Rust toolchain](https://rustup.rs) (Rust 1.85+)
 
 ```powershell
-git clone https://github.com/sharma-vikram/pgen
-cd pgen
+git clone https://github.com/sharma-vikram/passid
+cd passid
 
 # Standard Windows build
 cargo build --release
@@ -50,15 +50,15 @@ cargo build --release --target x86_64-pc-windows-gnullvm
 ```
 
 The release binary is written to:
-- `target\release\pgen.exe` (default)
-- `target\x86_64-pc-windows-gnullvm\release\pgen.exe` (gnullvm target)
+- `target\release\passid.exe` (default)
+- `target\x86_64-pc-windows-gnullvm\release\passid.exe` (gnullvm target)
 
 ---
 
 ## Usage
 
 ```
-pgen --length <LENGTH> [OPTIONS]
+passid --length <LENGTH> [OPTIONS]
 ```
 
 ### Options
@@ -95,7 +95,7 @@ pgen --length <LENGTH> [OPTIONS]
 
 **Basic — 16-character alphanumeric password:**
 ```
-pgen --length 16
+passid --length 16
 ```
 ```
 wBmJsXKpVtNcGfRu
@@ -103,7 +103,7 @@ wBmJsXKpVtNcGfRu
 
 **With symbols and numbers:**
 ```
-pgen --length 20 --symbol --number
+passid --length 20 --symbol --number
 ```
 ```
 *6whGsV&hJRf@!Rm.M8K
@@ -111,7 +111,7 @@ pgen --length 20 --symbol --number
 
 **Lowercase and numbers only:**
 ```
-pgen --length 14 --no-upper --number
+passid --length 14 --no-upper --number
 ```
 ```
 x3kp7mjq9bnc4r
@@ -119,7 +119,7 @@ x3kp7mjq9bnc4r
 
 **Generate 5 passwords at once:**
 ```
-pgen --length 16 --symbol --number --count 5
+passid --length 16 --symbol --number --count 5
 ```
 ```
 8j={AK9X^S;uf!W#
@@ -131,7 +131,7 @@ MM9Sn(,TUT6ew6!!
 
 **Minimum length error:**
 ```
-pgen --length 6 --symbol
+passid --length 6 --symbol
 ```
 ```
 Error: --length 6 is below the minimum of 10.
@@ -139,7 +139,7 @@ Error: --length 6 is below the minimum of 10.
 
 **Generate a UUID v4:**
 ```
-pgen --uuid
+passid --uuid
 ```
 ```
 f47ac10b-58cc-4372-a567-0e02b2c3d479
@@ -147,7 +147,7 @@ f47ac10b-58cc-4372-a567-0e02b2c3d479
 
 **Generate 5 UUID v7s (timestamp-sortable):**
 ```
-pgen -u --uuid-version v7 -c 5
+passid -u --uuid-version v7 -c 5
 ```
 ```
 019c9021-822e-7181-a8db-9c63b8bb621e
@@ -159,7 +159,7 @@ pgen -u --uuid-version v7 -c 5
 
 **Generate a TypeID with a prefix:**
 ```
-pgen --typeid-prefix user
+passid --typeid-prefix user
 ```
 ```
 user_01h455vb4pex5vsknk084sn02q
@@ -167,7 +167,7 @@ user_01h455vb4pex5vsknk084sn02q
 
 **Generate 3 TypeIDs with no prefix (bare suffix):**
 ```
-pgen --typeid --count 3
+passid --typeid --count 3
 ```
 ```
 01h455vb4pex5vsknk084sn02q
@@ -177,7 +177,7 @@ pgen --typeid --count 3
 
 **Generate a ULID:**
 ```
-pgen --ulid
+passid --ulid
 ```
 ```
 01JNCQ8MZDBK3P9S6X4V2T7RFW
@@ -185,7 +185,7 @@ pgen --ulid
 
 **Generate 5 ULIDs (monotonically ordered):**
 ```
-pgen --ulid --count 5
+passid --ulid --count 5
 ```
 ```
 01JNCQ8MZDEK5V8W2P4N3Q6TXR
@@ -197,7 +197,7 @@ pgen --ulid --count 5
 
 **Generate a default NanoID (21 chars):**
 ```
-pgen --nanoid
+passid --nanoid
 ```
 ```
 V1StGXR8_Z5jdHi6B-myT
@@ -205,7 +205,7 @@ V1StGXR8_Z5jdHi6B-myT
 
 **Generate a 32-char NanoID:**
 ```
-pgen --nanoid-size 32
+passid --nanoid-size 32
 ```
 ```
 Xv9A2x2N8y7sV3rQ1mL0bPzKcT4uW5dE
@@ -213,7 +213,7 @@ Xv9A2x2N8y7sV3rQ1mL0bPzKcT4uW5dE
 
 **Generate NanoID with custom alphabet:**
 ```
-pgen --nanoid --nanoid-alphabet ABC123 --nanoid-size 16
+passid --nanoid --nanoid-alphabet ABC123 --nanoid-size 16
 ```
 ```
 AC21B3A12C31AB2C
@@ -221,7 +221,7 @@ AC21B3A12C31AB2C
 
 **Generate a KSUID:**
 ```
-pgen --ksuid
+passid --ksuid
 ```
 ```
 3BSGB9Ov0Y1QEgoXb993522G2PH
@@ -229,7 +229,7 @@ pgen --ksuid
 
 **Generate 5 KsuidMs (4ms precision):**
 ```
-pgen --ksuid-ms --count 5
+passid --ksuid-ms --count 5
 ```
 ```
 3BSGC23KzC54NDJrCrSvmVzw2K4

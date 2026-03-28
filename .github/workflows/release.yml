@@ -17,19 +17,19 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: pgen
+            artifact: passid
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            artifact: pgen
+            artifact: passid
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact: pgen
+            artifact: passid
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact: pgen
+            artifact: passid
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: pgen.exe
+            artifact: passid.exe
 
     steps:
       - name: Checkout
@@ -55,18 +55,18 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf pgen-${{ github.ref_name }}-${{ matrix.target }}.tar.gz ${{ matrix.artifact }}
+          tar czf passid-${{ github.ref_name }}-${{ matrix.target }}.tar.gz ${{ matrix.artifact }}
 
       - name: Package binary (Windows)
         if: runner.os == 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          Compress-Archive -Path ${{ matrix.artifact }} -DestinationPath pgen-${{ github.ref_name }}-${{ matrix.target }}.zip
+          Compress-Archive -Path ${{ matrix.artifact }} -DestinationPath passid-${{ github.ref_name }}-${{ matrix.target }}.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pgen-${{ matrix.target }}
+          name: passid-${{ matrix.target }}
           path: |
             target/${{ matrix.target }}/release/*.tar.gz
             target/${{ matrix.target }}/release/*.zip
