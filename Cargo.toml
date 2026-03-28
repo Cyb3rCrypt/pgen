@@ -6,7 +6,7 @@ authors = ["Vikram Sharma"]
 rust-version = "1.85"
 description = "Fast, secure, secret-safe CLI for passwords + modern monotonic IDs (UUIDv7, ULID, KSUID, TypeID, NanoID)"
 repository = "https://github.com/sharma-vikram/passid"
-keywords = ["password", "cli", "unique id", "sortable id", "devops"]
+keywords = ["password", "cli", "unique-id", "sortable-id", "devops"]
 categories = ["command-line-utilities", "cryptography"]
 license = "MIT"
 
