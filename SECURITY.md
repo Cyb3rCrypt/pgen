@@ -17,7 +17,7 @@ Public disclosure before a fix is available puts users at risk.
 
 Use GitHub's built-in private reporting instead:
 
-1. Go to <https://github.com/sharma-vikram/pgen/security/advisories/new>
+1. Go to <https://github.com/sharma-vikram/passid/security/advisories/new>
 2. Fill in a brief description, the affected version, and reproduction steps.
 3. Submit — only the maintainer can see it.
 
@@ -45,7 +45,7 @@ Vulnerabilities in the following are in scope:
 - Dependency vulnerabilities that affect the above
 
 Out of scope: build-toolchain issues, GitHub Actions supply-chain items
-unrelated to pgen itself, or findings already covered by `cargo audit`.
+unrelated to passid itself, or findings already covered by `cargo audit`.
 
 ## Disclosure Policy
 

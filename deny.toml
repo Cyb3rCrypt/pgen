@@ -1,4 +1,4 @@
-# deny.toml - tailored for pgen (MIT-licensed Rust CLI using clap + rand)
+# deny.toml - tailored for passid (MIT-licensed Rust CLI using clap + rand)
 
 [licenses]
 version = 2

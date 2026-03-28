@@ -2,7 +2,7 @@
 #![deny(clippy::all)]
 #![warn(clippy::pedantic)]
 
-//! `pgen` — Fast random password, `UUID`, `TypeID`, `ULID`, and `NanoID` generator.
+//! `passid` — Fast, secure, secret-safe CLI for passwords + modern monotonic IDs.
 use anyhow::{Result, bail};
 use clap::{Parser, ValueEnum};
 use rand::{Rng, RngExt, seq::IndexedRandom, seq::SliceRandom};
@@ -279,7 +279,7 @@ impl TryFrom<&Args> for Config {
 /// Returns a `Zeroizing<Vec<u8>>` (all ASCII). The wrapper guarantees
 /// zeroization on drop — no manual cleanup required by the caller.
 #[must_use = "password bytes must not be discarded — Zeroizing ensures cleanup on drop"]
-fn pgen(
+fn passid(
     length: usize,
     required_sets: &[&'static [u8]],
     pool: &[u8],
@@ -669,7 +669,7 @@ fn gen_typeid(prefix: &str, rng: &mut impl Rng) -> Result<String> {
 // Entropy overflow (all 80 bits set within one millisecond) triggers a
 // spin-wait bounded to 500 ms — identical to UUIDv7's counter-exhaustion
 // handling — rather than returning an error, keeping the API infallible
-// for callers and consistent with the rest of pgen.
+// for callers and consistent with the rest of passid.
 // ---------------------------------------------------------------------------
 struct UlidState {
     last_ms: u64,
@@ -1150,7 +1150,7 @@ fn run_pass(args: &Args) -> Result<()> {
     // NOTE: Zeroizing covers the in-process buffer only. Bytes passed to
     // write_all() enter kernel I/O buffers that are outside our control.
     for _ in 0..config.count {
-        let bytes = pgen(config.length, &config.required_sets, &config.pool, &mut rng);
+        let bytes = passid(config.length, &config.required_sets, &config.pool, &mut rng);
         if let Err(e) = handle.write_all(&bytes) {
             if e.kind() == std::io::ErrorKind::BrokenPipe {
                 break;
@@ -1378,23 +1378,23 @@ mod tests {
         assert!(Config::try_from(&args).is_ok());
     }
 
-    // --- pgen ---
+    // --- passid ---
 
     #[test]
-    fn pgen_returns_correct_length() {
+    fn passid_returns_correct_length() {
         let sets: &[&[u8]] = &[U_CHARS, L_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
-        let result = pgen(16, sets, &pool, &mut make_test_rng());
+        let result = passid(16, sets, &pool, &mut make_test_rng());
         assert_eq!(result.len(), 16);
     }
 
     #[test]
-    fn pgen_satisfies_min_per_set() {
+    fn passid_satisfies_min_per_set() {
         let sets: &[&[u8]] = &[U_CHARS, L_CHARS, N_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
         let mut rng = make_test_rng();
         for _ in 0..50 {
-            let pwd = pgen(16, sets, &pool, &mut rng);
+            let pwd = passid(16, sets, &pool, &mut rng);
             let upper = pwd.iter().filter(|&&c| U_CHARS.contains(&c)).count();
             let lower = pwd.iter().filter(|&&c| L_CHARS.contains(&c)).count();
             let digit = pwd.iter().filter(|&&c| N_CHARS.contains(&c)).count();
@@ -1405,14 +1405,14 @@ mod tests {
     }
 
     #[test]
-    fn pgen_satisfies_all_four_sets_at_min_length() {
+    fn passid_satisfies_all_four_sets_at_min_length() {
         // Stress test: 4 sets at minimum length — the scenario that previously
         // required ~15-30 rejection sampling attempts on average.
         let sets: &[&[u8]] = &[U_CHARS, L_CHARS, S_CHARS, N_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
         let mut rng = make_test_rng();
         for _ in 0..200 {
-            let pwd = pgen(MIN_LENGTH, sets, &pool, &mut rng);
+            let pwd = passid(MIN_LENGTH, sets, &pool, &mut rng);
             assert_eq!(pwd.len(), MIN_LENGTH);
             let upper = pwd.iter().filter(|&&c| U_CHARS.contains(&c)).count();
             let lower = pwd.iter().filter(|&&c| L_CHARS.contains(&c)).count();
@@ -1426,31 +1426,31 @@ mod tests {
     }
 
     #[test]
-    fn pgen_all_chars_from_pool() {
+    fn passid_all_chars_from_pool() {
         let sets: &[&[u8]] = &[U_CHARS, S_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
-        let pwd = pgen(20, sets, &pool, &mut make_test_rng());
+        let pwd = passid(20, sets, &pool, &mut make_test_rng());
         for &c in pwd.iter() {
             assert!(pool.contains(&c), "unexpected byte '{c}' not in pool");
         }
     }
 
     #[test]
-    fn pgen_all_chars_are_valid_ascii() {
+    fn passid_all_chars_are_valid_ascii() {
         let sets: &[&[u8]] = &[U_CHARS, L_CHARS, S_CHARS, N_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
-        let pwd = pgen(20, sets, &pool, &mut make_test_rng());
+        let pwd = passid(20, sets, &pool, &mut make_test_rng());
         assert!(pwd.is_ascii(), "password contains non-ASCII bytes");
     }
 
     #[test]
-    fn pgen_single_set_no_panic() {
+    fn passid_single_set_no_panic() {
         // Edge case: only one active set. Mandatory placement draws from that
         // set, fill draws from the same pool. Must not panic or produce
         // out-of-pool characters.
         let sets: &[&[u8]] = &[N_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
-        let pwd = pgen(10, sets, &pool, &mut make_test_rng());
+        let pwd = passid(10, sets, &pool, &mut make_test_rng());
         assert_eq!(pwd.len(), 10);
         for &c in pwd.iter() {
             assert!(N_CHARS.contains(&c), "unexpected byte outside digit set");
@@ -1458,7 +1458,7 @@ mod tests {
     }
 
     #[test]
-    fn pgen_uniqueness_smoke_test() {
+    fn passid_uniqueness_smoke_test() {
         // Generate 100 passwords and assert all are unique.
         // Not cryptographic proof, but catches catastrophic RNG failures
         // (e.g., accidentally seeding with a constant).
@@ -1467,7 +1467,7 @@ mod tests {
         let mut rng = rand::rng();
         let mut seen: HashSet<Vec<u8>> = HashSet::new();
         for _ in 0..100 {
-            let pwd = pgen(20, sets, &pool, &mut rng);
+            let pwd = passid(20, sets, &pool, &mut rng);
             // Clone inner bytes for the HashSet — Zeroizing doesn't impl Hash.
             // The Zeroizing wrapper drops and zeroizes `pwd` at end of iteration.
             assert!(
@@ -1484,7 +1484,7 @@ mod tests {
     }
 
     #[test]
-    fn pgen_shuffle_distribution_smoke_test() {
+    fn passid_shuffle_distribution_smoke_test() {
         // Validation of Phase 1 order being randomized by Phase 3 (Shuffle).
         // Without shuffle, Phase 1 fills the buffer deterministically:
         // [set[0], set[0], ..., set[1], set[1], ...]
@@ -1502,8 +1502,8 @@ mod tests {
         let trials = 100;
 
         for _ in 0..trials {
-            // pgen takes sets slice directly, preserving order for Phase 1
-            let pwd = pgen(MIN_LENGTH, sets, &pool, &mut rng);
+            // passid takes sets slice directly, preserving order for Phase 1
+            let pwd = passid(MIN_LENGTH, sets, &pool, &mut rng);
             if U_CHARS.contains(&pwd[0]) {
                 uppercase_at_start_count += 1;
             }

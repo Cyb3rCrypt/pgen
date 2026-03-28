@@ -1,12 +1,12 @@
 [package]
-name = "pgen"
+name = "passid"
 version = "1.5.1"
 edition = "2024"
 authors = ["Vikram Sharma"]
 rust-version = "1.85"
-description = "Cryptographically random password, UUID, TypeID, ULID, NanoID, and KSUID generator"
-repository = "https://github.com/sharma-vikram/pgen"
-keywords = ["password", "generator", "cli", "cryptography", "ksuid"]
+description = "Fast, secure, secret-safe CLI for passwords + modern monotonic IDs (UUIDv7, ULID, KSUID, TypeID, NanoID)"
+repository = "https://github.com/sharma-vikram/passid"
+keywords = ["password", "cli", "unique id", "sortable id", "devops"]
 categories = ["command-line-utilities", "cryptography"]
 license = "MIT"
 

@@ -1,4 +1,4 @@
-# Contributing to pgen
+# Contributing to passid
 
 All contributors — maintainers and one-time patch authors alike — must follow
 these rules. The CI pipeline enforces what it can; code review enforces the rest.
@@ -217,6 +217,7 @@ All style checks run in CI. A PR with failing checks will not be merged.
 | `rustfmt` | `cargo fmt --check` | Canonical Rust formatting |
 | `clippy` | `cargo clippy --all-features -- -D warnings` | Lints (all + pedantic + nursery + cargo) |
 | `cargo-audit` | `cargo audit` | Known vulnerability advisories |
+| `cargo-deny` | `cargo deny check` | License and supply-chain checks |
 
 Run everything locally before pushing:
 
