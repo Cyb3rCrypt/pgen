@@ -223,8 +223,9 @@ Run everything locally before pushing:
 ```sh
 cargo fmt
 cargo clippy --all-features -- -D warnings
-cargo test --all-features -- --test-threads=1
+cargo test --all-features
 cargo audit
+cargo deny check
 ```
 
 No `#[allow(...)]` attributes may be added without a comment explaining why
