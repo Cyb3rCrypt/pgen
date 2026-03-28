@@ -6,7 +6,7 @@ on:
       - "v*.*.*"
 
 permissions:
-  contents: write
+  contents: write  # Required to create GitHub releases and upload assets
 
 jobs:
   build:
@@ -117,3 +117,26 @@ jobs:
             artifacts/checksums.txt
           body_path: artifacts/release-notes.md
           generate_release_notes: true
+
+  publish:
+    name: Publish to crates.io
+    needs: release
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      id-token: write  # Required for OIDC token exchange with crates.io
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Authenticate with crates.io (OIDC)
+        uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
+      - name: Publish to crates.io
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
