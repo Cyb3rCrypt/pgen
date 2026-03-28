@@ -4,7 +4,7 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.6.0-green.svg)](Cargo.toml)
+[![crates.io](https://img.shields.io/crates/v/passid.svg)](https://crates.io/crates/passid)
 [![CI](https://github.com/sharma-vikram/passid/actions/workflows/ci.yml/badge.svg)](https://github.com/sharma-vikram/passid/actions/workflows/ci.yml)
 
 ## Design & Philosophy
@@ -21,6 +21,12 @@
 - **KsuidMs**: A Svix-compatible monotonic extension that sacrifices 1 byte of the standard KSUID payload for a 4ms sub-second fractional counter, providing finer temporal sorting granularity while preserving exact 27-character Segment KSUID binary decoding compatibility.
 
 ## Installation
+
+### cargo install
+
+```sh
+cargo install passid
+```
 
 ### Pre-built binaries
 
