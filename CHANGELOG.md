@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-03-28
+
+### Changed
+
+- Binary and package renamed from `pgen` to `passid`. The CLI interface
+  (flags, output format, exit codes) is unchanged — only the invocation name
+  changes. Update any scripts, aliases, or CI pipelines accordingly.
+- Repository moved to `https://github.com/sharma-vikram/passid`.
+- Description updated to reflect DevOps positioning.
+
 ## [1.5.1] — 2026-03-28
 
 ### Fixed
@@ -258,7 +268,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-built binaries for Windows x86-64, Linux x86-64, Linux aarch64, macOS x86-64, macOS aarch64 via GitHub Actions release workflow.
 - CI pipeline: `cargo test`, `cargo clippy -D warnings`, `cargo fmt --check`, `cargo audit`.
 
-[Unreleased]: https://github.com/sharma-vikram/passid/compare/v1.5.1...HEAD
+[Unreleased]: https://github.com/sharma-vikram/passid/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/sharma-vikram/passid/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/sharma-vikram/passid/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/sharma-vikram/passid/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/sharma-vikram/passid/compare/v1.3.1...v1.4.0
