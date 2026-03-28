@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] — 2026-03-28
+
+### Fixed
+
+- All output paths (`run_pass`, `run_uuid`, `run_typeid`, `run_ulid`, `run_nanoid`, `run_ksuid`) now handle `SIGPIPE`/`BrokenPipe` gracefully. Commands such as `pgen -l 20 -c 1000 | head -1` previously printed `Error: Broken pipe` and exited 1; they now exit 0 silently.
+
+### Changed
+
+- CI: added `cargo-deny-action@v2` job for license and supply-chain checks; `deny.toml` added with MIT/Apache-2.0/Unicode-3.0 allowlist.
+- CI: removed `--test-threads=1` from the test job — monotonic-state tests are properly isolated via mutex guards.
+
 ## [1.5.0] — 2026-03-26
 
 ### Added
