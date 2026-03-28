@@ -82,8 +82,38 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum *.tar.gz *.zip | sort -k2 > checksums.txt
+          cat checksums.txt
+
+      - name: Generate release notes
+        run: |
+          cd artifacts
+          echo "## SHA256 Checksums" > release-notes.md
+          echo "" >> release-notes.md
+          echo "| File | SHA256 |" >> release-notes.md
+          echo "|------|--------|" >> release-notes.md
+          while IFS="  " read -r hash file; do
+            echo "| \`$file\` | \`$hash\` |" >> release-notes.md
+          done < checksums.txt
+          echo "" >> release-notes.md
+          echo "Verify with:" >> release-notes.md
+          echo '```sh' >> release-notes.md
+          echo 'sha256sum --check --ignore-missing checksums.txt' >> release-notes.md
+          echo '```' >> release-notes.md
+          echo "" >> release-notes.md
+          echo "---" >> release-notes.md
+          echo "" >> release-notes.md
+          cat release-notes.md
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**
+          files: |
+            artifacts/*.tar.gz
+            artifacts/*.zip
+            artifacts/checksums.txt
+          body_path: artifacts/release-notes.md
           generate_release_notes: true
