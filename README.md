@@ -34,11 +34,11 @@ Download the latest release for your platform from the [Releases](../../releases
 
 | Platform | File |
 |----------|------|
-| Windows x86-64 | `passid-v1.6.0-x86_64-pc-windows-msvc.zip` |
-| Linux x86-64 | `passid-v1.6.0-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux aarch64 | `passid-v1.6.0-aarch64-unknown-linux-gnu.tar.gz` |
-| macOS x86-64 | `passid-v1.6.0-x86_64-apple-darwin.tar.gz` |
-| macOS Apple Silicon | `passid-v1.6.0-aarch64-apple-darwin.tar.gz` |
+| Windows x86-64 | `passid-v1.7.0-x86_64-pc-windows-msvc.zip` |
+| Linux x86-64 | `passid-v1.7.0-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux aarch64 | `passid-v1.7.0-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS x86-64 | `passid-v1.7.0-x86_64-apple-darwin.tar.gz` |
+| macOS Apple Silicon | `passid-v1.7.0-aarch64-apple-darwin.tar.gz` |
 
 ### Build from source
 
