@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `run_typeid` now assembles each output line (`prefix_suffix\n`) into a single
+  91-byte stack buffer before calling `write_all`. Previously four separate
+  `write_all` calls (prefix, `_`, suffix, `\n`) were not atomic — a `BrokenPipe`
+  between any two produced a truncated malformed line silently.
 - `gen_password` now returns `Result<Zeroizing<Vec<u8>>>` instead of panicking
   when `length < required_sets.len() * MIN_PER_SET`. Library consumers calling
   the function directly with under-sized lengths now receive a descriptive `Err`

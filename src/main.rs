@@ -489,29 +489,26 @@ fn run_typeid(args: &Args) -> Result<()> {
     // gen_typeid is used by tests and validates independently; here we
     // skip it since prefix is already validated above.
     let prefix_bytes = prefix.as_bytes();
+    // Pre-assemble each output line into a stack buffer before writing.
+    // Four separate write_all calls (prefix, "_", suffix, "\n") are not atomic:
+    // a BrokenPipe between any two produces a truncated malformed line.
+    // Max line: 63 (prefix) + 1 ("_") + 26 (suffix) + 1 ("\n") = 91 bytes.
+    let mut line = [0u8; 91];
     for _ in 0..count {
         let suffix = encode_base32(&next_v7_bytes(&mut rng)?);
-        if !prefix_bytes.is_empty() {
-            if let Err(e) = handle.write_all(prefix_bytes) {
-                if e.kind() == std::io::ErrorKind::BrokenPipe {
-                    break;
-                }
-                return Err(e.into());
-            }
-            if let Err(e) = handle.write_all(b"_") {
-                if e.kind() == std::io::ErrorKind::BrokenPipe {
-                    break;
-                }
-                return Err(e.into());
-            }
-        }
-        if let Err(e) = handle.write_all(&suffix) {
-            if e.kind() == std::io::ErrorKind::BrokenPipe {
-                break;
-            }
-            return Err(e.into());
-        }
-        if let Err(e) = handle.write_all(b"\n") {
+        let line_len = if prefix_bytes.is_empty() {
+            line[..26].copy_from_slice(&suffix);
+            line[26] = b'\n';
+            27
+        } else {
+            let p = prefix_bytes.len();
+            line[..p].copy_from_slice(prefix_bytes);
+            line[p] = b'_';
+            line[p + 1..p + 27].copy_from_slice(&suffix);
+            line[p + 27] = b'\n';
+            p + 28
+        };
+        if let Err(e) = handle.write_all(&line[..line_len]) {
             if e.kind() == std::io::ErrorKind::BrokenPipe {
                 break;
             }
