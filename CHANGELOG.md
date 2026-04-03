@@ -9,6 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Refactored monolithic `src/main.rs` (2 222 lines) into a `lib` + `bin`
+  crate structure. `src/main.rs` is now a lightweight CLI frontend (~360
+  lines); all generation logic lives in dedicated modules:
+  `password`, `uuid`, `ulid`, `typeid`, `nanoid`, `ksuid`.
+  The crate now exposes a public library API alongside the binary.
+- `std_rng` feature moved from `[dependencies]` to `[dev-dependencies]`;
+  release binaries no longer compile the seeded PRNG code paths.
+
+### Fixed
+
+- NanoID `nanoid_custom` step formula now uses `u64` intermediates before
+  casting back to `usize`, preventing theoretical overflow if size/alphabet
+  limits are ever raised.
+- Corrected misleading doc comment on `ulid_increment`: carry propagates
+  from LSB (byte 9) toward MSB (byte 0), not "MSB-first".
+- Removed redundant `#[cfg(debug_assertions)]` pool-disjoint check in
+  `Config::try_from`; the invariant is fully covered by the
+  `character_sets_are_disjoint` unit test in `password.rs`.
+
+### Security
+
+- Added compile-time assertion that `NANOID_URL_ALPHABET.len() == 64`,
+  making it impossible to silently break the bias-free `b & 63` indexing
+  if the constant is ever modified.
+- Added `debug_assert!(timestamp_ms < (1u64 << 48))` in `encode_ulid` to
+  guard against silent high-bit truncation on out-of-range timestamps.
+
+### Tests
+
+- Added concurrent uniqueness tests: 8 threads × 500 IDs for both UUIDv7
+  and ULID, verifying the internal `Mutex` guards serialise correctly under
+  contention.
+- Added TypeID prefix boundary tests: exactly 63-char prefix (valid),
+  64-char prefix (rejected), and prefixes with internal underscores (valid).
+- Added NanoID max valid alphabet test using the full 95-char printable
+  ASCII range (`0x20`–`0x7E`).
+
 ## [1.6.0] — 2026-03-28
 
 ### Changed

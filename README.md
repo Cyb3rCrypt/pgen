@@ -1,6 +1,6 @@
 # passid
 
-> Fast, secure, secret-safe CLI for passwords + modern monotonic IDs (UUIDv7, ULID, KSUID, TypeID, NanoID). Built for DevOps pipelines.
+> Fast, secure, secret-safe CLI **and Rust library** for passwords + modern monotonic IDs (UUIDv7, ULID, KSUID, TypeID, NanoID). Built for DevOps pipelines.
 
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -58,6 +58,38 @@ cargo build --release --target x86_64-pc-windows-gnullvm
 The release binary is written to:
 - `target\release\passid.exe` (default)
 - `target\x86_64-pc-windows-gnullvm\release\passid.exe` (gnullvm target)
+
+---
+
+## Library Usage
+
+`passid` is also available as a Rust library crate. Add it to your project:
+
+```sh
+cargo add passid
+```
+
+Or in `Cargo.toml`:
+
+```toml
+[dependencies]
+passid = "1"
+```
+
+### Modules
+
+| Module | Public API |
+|--------|-----------|
+| `passid::password` | `gen_password` — configurable password generator with zeroized output |
+| `passid::uuid` | `gen_uuid_v4_bytes`, `next_v7_bytes`, `format_uuid_bytes_buf` |
+| `passid::ulid` | `next_ulid_bytes` — monotonic ULID |
+| `passid::typeid` | `encode_base32`, `validate_prefix` |
+| `passid::nanoid` | `nanoid_default`, `nanoid_custom`, `validate_nanoid_alphabet` |
+| `passid::ksuid` | `gen_ksuid_bytes`, `gen_ksuid_ms_bytes` |
+
+> **Note:** Always pass `rand::rng()` (the OS-backed CSPRNG) as the RNG
+> argument in production paths. Full API documentation will be available on
+> [docs.rs](https://docs.rs/passid) once the crate is published.
 
 ---
 

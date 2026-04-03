@@ -11,10 +11,13 @@ categories = ["command-line-utilities", "cryptography"]
 license = "MIT"
 
 [dependencies]
-rand = { version = "0.10.0", features = ["std", "std_rng"] }
+rand = { version = "0.10.0", features = ["std"] }
 clap = { version = "4.5.60", features = ["derive"] }
 anyhow = "1.0.102"
 zeroize = "1.8.2"
+
+[dev-dependencies]
+rand = { version = "0.10.0", features = ["std_rng"] }
 
 [profile.release]
 strip = true
