@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `now_ms()` extracted from `uuid.rs` and `ulid.rs` into a single
   `pub(crate)` function in `lib.rs`. Both modules now call `crate::now_ms()`,
   eliminating the divergence risk noted in correctness audit finding #1.
+- Corrected spin-wait timeout comments in `uuid.rs` and `ulid.rs`: the actual
+  bound is `50 × 100 µs = 5 ms`, not the previously documented `~500 ms`.
+  Error messages in `bail!` calls updated to match.
+- Extracted `pub const PREFIX_MAX_LEN: usize = 63` in `typeid.rs`. The
+  `validate_prefix` implementation and boundary tests now reference the named
+  constant, eliminating the magic-number divergence risk (audit finding #12).
 
 ### Fixed
 

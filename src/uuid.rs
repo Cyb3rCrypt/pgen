@@ -18,7 +18,7 @@ use std::sync::{Mutex, OnceLock};
 // Counter is 12 bits (0x000–0xFFF). On each millisecond advance the counter
 // is seeded with 9 random bits (0x000–0x1FF), leaving 3 584 headroom slots
 // before exhaustion (RFC 9562 §6.2 recommendation). On exhaustion within the
-// same millisecond the function spin-waits (bounded to ~500 ms) until the
+// same millisecond the function spin-waits (bounded to ~5 ms) until the
 // system clock advances.
 //
 // Clock rollback: clamped to `last_ms`; counter keeps incrementing.
@@ -50,19 +50,19 @@ fn mono_state() -> &'static Mutex<MonotonicState> {
 /// For any two calls the returned 16-byte value is strictly greater
 /// (lexicographically) than any previously returned value. Clock rollbacks are
 /// clamped; counter exhaustion within the same millisecond causes the caller
-/// to spin-wait (bounded to ~500 ms) until the clock advances, so monotonicity
+/// to spin-wait (bounded to ~5 ms) until the clock advances, so monotonicity
 /// is unconditional.
 ///
 /// # Errors
-/// Returns `Err` if the system clock does not advance within ~500 ms (50 sleep
-/// cycles). This indicates a frozen or suspended clock and monotonic `UUIDv7`
-/// generation cannot progress safely.
+/// Returns `Err` if the system clock does not advance within ~5 ms (50 sleep
+/// cycles of 100 µs each). This indicates a frozen or suspended clock and
+/// monotonic `UUIDv7` generation cannot progress safely.
 ///
 /// # Panics
 /// Does not panic in practice: the counter is 12 bits so `counter >> 8` always
 /// fits `u8`, and `counter & 0xFF` always fits `u8`.
 pub fn next_v7_bytes(rng: &mut impl CryptoRng) -> Result<[u8; 16]> {
-    // 50 sleep cycles × (10 000 spins + 100 µs sleep each) ≈ 500 ms total.
+    // 50 sleep cycles × 100 µs each = 5 ms total (not 500 ms — previous comment was wrong).
     // A real clock must advance within this window; if not, the system is broken.
     const MAX_SPIN_CYCLES: u32 = 50;
 
@@ -104,7 +104,7 @@ pub fn next_v7_bytes(rng: &mut impl CryptoRng) -> Result<[u8; 16]> {
             if cycles >= MAX_SPIN_CYCLES {
                 bail!(
                     "UUIDv7 counter exhausted: clock did not advance within \
-                     {MAX_SPIN_CYCLES} sleep cycles (~500 ms)"
+                     {MAX_SPIN_CYCLES} sleep cycles (~5 ms)"
                 );
             }
         }

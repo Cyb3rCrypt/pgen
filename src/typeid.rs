@@ -13,6 +13,9 @@ use rand::CryptoRng;
 // Characters 'i', 'l', 'o', 'u' are absent (visually ambiguous).
 pub(crate) const TYPEID_ALPHABET: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 
+/// Maximum byte length of a `TypeID` prefix (spec v0.3.0 §Prefix).
+pub const PREFIX_MAX_LEN: usize = 63;
+
 /// Encodes a 16-byte (128-bit) UUID into the 26-character `TypeID` base32 suffix.
 ///
 /// Two zero bits are prepended, giving 130 bits split into 26 × 5-bit groups.
@@ -53,8 +56,8 @@ pub fn validate_prefix(prefix: &str) -> Result<()> {
         bail!("TypeID prefix {prefix:?} must be ASCII.");
     }
     let byte_len = prefix.len();
-    if byte_len > 63 {
-        bail!("TypeID prefix is {byte_len} bytes; maximum is 63.");
+    if byte_len > PREFIX_MAX_LEN {
+        bail!("TypeID prefix is {byte_len} bytes; maximum is {PREFIX_MAX_LEN}.");
     }
     if !prefix.starts_with(|c: char| c.is_ascii_lowercase()) {
         bail!("TypeID prefix {prefix:?} must start with a lowercase ASCII letter [a-z].");
@@ -216,7 +219,7 @@ mod tests {
     fn typeid_invalid_prefix_rejected() {
         let _v7 = V7_LOCK.lock().unwrap();
         let mut rng = rand::rng();
-        let long = "a".repeat(64);
+        let long = "a".repeat(PREFIX_MAX_LEN + 1);
         let cases = ["PREFIX", "12345", "_prefix", "prefix_", long.as_str()];
         for bad in &cases {
             assert!(
@@ -228,18 +231,19 @@ mod tests {
 
     #[test]
     fn typeid_prefix_length_boundaries() {
-        // Exactly 63 lowercase letters — the maximum valid length per spec.
-        let at_limit = "a".repeat(63);
+        // Exactly PREFIX_MAX_LEN lowercase letters — the maximum valid length per spec.
+        let at_limit = "a".repeat(PREFIX_MAX_LEN);
         assert!(
             validate_prefix(&at_limit).is_ok(),
-            "63-char prefix must be valid (at the spec limit)"
+            "{PREFIX_MAX_LEN}-char prefix must be valid (at the spec limit)"
         );
 
-        // 64 chars — one over the limit; must be rejected.
-        let over_limit = "a".repeat(64);
+        // One over the limit; must be rejected.
+        let over_limit = "a".repeat(PREFIX_MAX_LEN + 1);
         assert!(
             validate_prefix(&over_limit).is_err(),
-            "64-char prefix must be rejected (exceeds spec limit of 63)"
+            "{}-char prefix must be rejected (exceeds spec limit of {PREFIX_MAX_LEN})",
+            PREFIX_MAX_LEN + 1
         );
     }
 

@@ -30,7 +30,7 @@ const ULID_ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 // output is always strictly greater than the previous value.
 //
 // Entropy overflow (all 80 bits set within one millisecond) triggers a
-// spin-wait bounded to 500 ms — identical to UUIDv7's counter-exhaustion
+// spin-wait bounded to ~5 ms — identical to UUIDv7's counter-exhaustion
 // handling — rather than returning an error, keeping the API infallible
 // for callers and consistent with the rest of passid.
 // ---------------------------------------------------------------------------
@@ -68,13 +68,13 @@ fn ulid_increment(entropy: &mut [u8; 10]) -> bool {
 /// Returns the next monotonic ULID as a raw `[u8; 26]` of ASCII bytes.
 ///
 /// Spin-wait behaviour on entropy overflow mirrors `next_v7_bytes`:
-/// bounded to 500 ms (50 sleep cycles); returns an error if the clock does not
-/// advance within that window.
+/// bounded to ~5 ms (50 sleep cycles of 100 µs each); returns an error if the
+/// clock does not advance within that window.
 ///
 /// # Errors
 /// Returns `Err` if the system clock is before the Unix epoch, the timestamp
 /// overflows `u64`, or 80-bit entropy is exhausted and the clock does not
-/// advance within ~500 ms (50 sleep cycles).
+/// advance within ~5 ms (50 sleep cycles of 100 µs each).
 pub fn next_ulid_bytes(rng: &mut impl CryptoRng) -> Result<[u8; 26]> {
     const MAX_SPIN_CYCLES: u32 = 50;
 
@@ -109,7 +109,7 @@ pub fn next_ulid_bytes(rng: &mut impl CryptoRng) -> Result<[u8; 26]> {
             if cycles >= MAX_SPIN_CYCLES {
                 bail!(
                     "ULID entropy exhausted: clock did not advance within \
-                     {MAX_SPIN_CYCLES} sleep cycles (500 ms)"
+                     {MAX_SPIN_CYCLES} sleep cycles (~5 ms)"
                 );
             }
         } else {
