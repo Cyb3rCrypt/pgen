@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- All public generator functions (`gen_password`, `next_v7_bytes`, `gen_uuid_v4_bytes`,
+  `next_ulid_bytes`, `nanoid_default`, `nanoid_custom`, `gen_ksuid_bytes`,
+  `gen_ksuid_ms_bytes`) now require `rng: &mut impl CryptoRng`. Since `CryptoRng` is a
+  supertrait of `Rng` in rand 0.10, callers can no longer pass a deterministic/seeded
+  RNG (e.g. `StdRng`) — the compiler rejects it at the call site. Only OS-backed
+  CSPRNGs such as `rand::rng()` satisfy the bound.
+- All test code migrated from `StdRng::seed_from_u64(42)` to `rand::rng()`; the
+  `std_rng` feature is no longer compiled into any build target.
 - Added compile-time assertion that `NANOID_URL_ALPHABET.len() == 64`,
   making it impossible to silently break the bias-free `b & 63` indexing
   if the constant is ever modified.

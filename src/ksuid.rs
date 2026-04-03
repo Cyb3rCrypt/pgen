@@ -4,7 +4,7 @@
 //! `KsuidMs` variant: <https://github.com/svix/rust-ksuid>
 
 use anyhow::Result;
-use rand::Rng;
+use rand::CryptoRng;
 
 // ── KSUID constants ──────────────────────────────────────────────────────────
 //
@@ -140,7 +140,7 @@ fn ksuid_timestamp_secs() -> Result<u32> {
 /// # Errors
 /// Returns `Err` if the system clock is set before the KSUID epoch
 /// (2014-05-13) or if the timestamp offset overflows `u32` (~year 2150).
-pub fn gen_ksuid_bytes(rng: &mut impl Rng) -> Result<[u8; KSUID_STRING_LEN]> {
+pub fn gen_ksuid_bytes(rng: &mut impl CryptoRng) -> Result<[u8; KSUID_STRING_LEN]> {
     let ts = ksuid_timestamp_secs()?;
     let mut raw = [0u8; KSUID_TOTAL_BYTES];
     raw[..4].copy_from_slice(&ts.to_be_bytes());
@@ -165,7 +165,7 @@ pub fn gen_ksuid_bytes(rng: &mut impl Rng) -> Result<[u8; KSUID_STRING_LEN]> {
 /// # Panics
 /// Does not panic in practice: `subsec_millis()` returns 0–999 ms, so
 /// `subsec_ms / 4` is always 0–249 which fits `u8`.
-pub fn gen_ksuid_ms_bytes(rng: &mut impl Rng) -> Result<[u8; KSUID_STRING_LEN]> {
+pub fn gen_ksuid_ms_bytes(rng: &mut impl CryptoRng) -> Result<[u8; KSUID_STRING_LEN]> {
     let (ts, subsec_ms) = ksuid_timestamp_parts()?;
 
     // 4ms resolution: 0..=999 ms → 0..=249 (fits u8 with no truncation risk).
@@ -181,15 +181,10 @@ pub fn gen_ksuid_ms_bytes(rng: &mut impl Rng) -> Result<[u8; KSUID_STRING_LEN]> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{SeedableRng, rngs::StdRng};
-
-    fn make_test_rng() -> StdRng {
-        StdRng::seed_from_u64(42)
-    }
 
     #[test]
     fn ksuid_encode_decode_roundtrip() {
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         let buf = gen_ksuid_bytes(&mut rng).expect("gen ok");
         let raw = ksuid_decode(&buf).expect("decode ok");
         assert_eq!(

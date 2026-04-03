@@ -1,7 +1,7 @@
 //! UUID v4 and monotonic UUID v7 generation (RFC 4122 / RFC 9562).
 
 use anyhow::{Result, bail};
-use rand::{Rng, RngExt};
+use rand::{CryptoRng, RngExt};
 use std::sync::{Mutex, OnceLock};
 
 // ── Monotonic UUIDv7 state ───────────────────────────────────────────────────
@@ -72,7 +72,7 @@ fn now_ms() -> Result<u64> {
 /// # Panics
 /// Does not panic in practice: the counter is 12 bits so `counter >> 8` always
 /// fits `u8`, and `counter & 0xFF` always fits `u8`.
-pub fn next_v7_bytes(rng: &mut impl Rng) -> Result<[u8; 16]> {
+pub fn next_v7_bytes(rng: &mut impl CryptoRng) -> Result<[u8; 16]> {
     // 50 sleep cycles × (10 000 spins + 100 µs sleep each) ≈ 500 ms total.
     // A real clock must advance within this window; if not, the system is broken.
     const MAX_SPIN_CYCLES: u32 = 50;
@@ -144,7 +144,7 @@ const fn apply_uuid_v4_bits(b: &mut [u8; 16]) {
 }
 
 #[must_use]
-pub fn gen_uuid_v4_bytes(rng: &mut impl Rng) -> [u8; 16] {
+pub fn gen_uuid_v4_bytes(rng: &mut impl CryptoRng) -> [u8; 16] {
     let mut b: [u8; 16] = rng.random();
     apply_uuid_v4_bits(&mut b);
     b
@@ -182,12 +182,12 @@ fn format_uuid_bytes(b: &[u8; 16]) -> String {
 }
 
 #[cfg(test)]
-fn gen_uuid_v4(rng: &mut impl Rng) -> String {
+fn gen_uuid_v4(rng: &mut impl CryptoRng) -> String {
     format_uuid_bytes(&gen_uuid_v4_bytes(rng))
 }
 
 #[cfg(test)]
-fn gen_uuid_v7(rng: &mut impl Rng) -> String {
+fn gen_uuid_v7(rng: &mut impl CryptoRng) -> String {
     format_uuid_bytes(&next_v7_bytes(rng).expect("v7 generation failed: monotonic clock stalled"))
 }
 
@@ -199,12 +199,7 @@ pub(crate) static V7_LOCK: Mutex<()> = Mutex::new(());
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{SeedableRng, rngs::StdRng};
     use std::collections::HashSet;
-
-    fn make_test_rng() -> StdRng {
-        StdRng::seed_from_u64(42)
-    }
 
     /// RAII guard that zeros `MONO_STATE` on drop, even when the test panics.
     /// Use in any test that injects synthetic timestamps into `MonotonicState`.
@@ -247,7 +242,7 @@ mod tests {
 
     #[test]
     fn uuid_v4_format_and_bits() {
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         for _ in 0..20 {
             let uuid = gen_uuid_v4(&mut rng);
             let (version, variant) = check_uuid_format(&uuid);
@@ -262,7 +257,7 @@ mod tests {
     #[test]
     fn uuid_v7_format_and_bits() {
         let _v7 = V7_LOCK.lock().unwrap();
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         for _ in 0..20 {
             let uuid = gen_uuid_v7(&mut rng);
             let (version, variant) = check_uuid_format(&uuid);

@@ -3,7 +3,7 @@
 //! Spec: <https://github.com/ai/nanoid>
 
 use anyhow::{Result, bail};
-use rand::Rng;
+use rand::CryptoRng;
 
 // ── NanoID constants ─────────────────────────────────────────────────────────
 //
@@ -62,7 +62,7 @@ pub fn validate_nanoid_alphabet(alphabet: &[u8]) -> Result<()> {
 
 /// Fast path — default 64-char URL-safe alphabet.
 #[must_use]
-pub fn nanoid_default(size: usize, rng: &mut impl Rng) -> String {
+pub fn nanoid_default(size: usize, rng: &mut impl CryptoRng) -> String {
     let mut bytes = vec![0u8; size];
     rng.fill_bytes(&mut bytes);
 
@@ -84,7 +84,7 @@ pub fn nanoid_default(size: usize, rng: &mut impl Rng) -> String {
 /// Does not panic in practice: `alphabet.len()` is validated to be ≤ 255
 /// before calling this function, so the `u32::try_from` cast always succeeds.
 #[must_use]
-pub fn nanoid_custom(alphabet: &[u8], size: usize, rng: &mut impl Rng) -> String {
+pub fn nanoid_custom(alphabet: &[u8], size: usize, rng: &mut impl CryptoRng) -> String {
     debug_assert!(!alphabet.is_empty(), "alphabet must be non-empty");
     debug_assert!(size > 0, "size must be > 0");
 
@@ -122,18 +122,13 @@ pub fn nanoid_custom(alphabet: &[u8], size: usize, rng: &mut impl Rng) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{SeedableRng, rngs::StdRng};
-
-    fn make_test_rng() -> StdRng {
-        StdRng::seed_from_u64(42)
-    }
 
     const NANOID_URL_CHARS: &str =
         "useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict";
 
     #[test]
     fn nanoid_default_correct_length() {
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         for size in [1, 21, 36, 128] {
             let id = nanoid_default(size, &mut rng);
             assert_eq!(id.len(), size, "expected length {size}, got {}", id.len());
@@ -142,7 +137,7 @@ mod tests {
 
     #[test]
     fn nanoid_default_chars_in_url_alphabet() {
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         for _ in 0..50 {
             let id = nanoid_default(21, &mut rng);
             for ch in id.chars() {
@@ -169,7 +164,7 @@ mod tests {
     #[test]
     fn nanoid_custom_correct_length() {
         let alpha = b"abcdefghij";
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         for size in [1, 10, 21, 100] {
             let id = nanoid_custom(alpha, size, &mut rng);
             assert_eq!(id.len(), size, "expected length {size}, got {}", id.len());
@@ -179,7 +174,7 @@ mod tests {
     #[test]
     fn nanoid_custom_chars_only_from_alphabet() {
         let alpha = b"AEIOU12345";
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         for _ in 0..100 {
             let id = nanoid_custom(alpha, 30, &mut rng);
             for ch in id.chars() {
@@ -211,7 +206,7 @@ mod tests {
     fn nanoid_custom_power_of_two_alphabet() {
         let alpha: Vec<u8> = (b'a'..=b'z').chain(b"012345".iter().copied()).collect();
         assert_eq!(alpha.len(), 32);
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         let id = nanoid_custom(&alpha, 50, &mut rng);
         assert_eq!(id.len(), 50);
         for ch in id.chars() {
@@ -278,7 +273,7 @@ mod tests {
             validate_nanoid_alphabet(&alpha).is_ok(),
             "95-char printable ASCII alphabet must be accepted"
         );
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         let id = nanoid_custom(&alpha, NANOID_DEFAULT_SIZE, &mut rng);
         assert_eq!(id.len(), NANOID_DEFAULT_SIZE);
         for ch in id.chars() {

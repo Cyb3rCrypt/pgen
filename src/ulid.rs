@@ -3,7 +3,7 @@
 //! Spec: <https://github.com/ulid/spec>
 
 use anyhow::{Result, bail};
-use rand::{Rng, RngExt};
+use rand::{CryptoRng, RngExt};
 use std::sync::{Mutex, OnceLock};
 
 // ── ULID Crockford Base32 encoding ─────────────────────────────────────────
@@ -86,7 +86,7 @@ fn ulid_increment(entropy: &mut [u8; 10]) -> bool {
 /// Returns `Err` if the system clock is before the Unix epoch, the timestamp
 /// overflows `u64`, or 80-bit entropy is exhausted and the clock does not
 /// advance within ~500 ms (50 sleep cycles).
-pub fn next_ulid_bytes(rng: &mut impl Rng) -> Result<[u8; 26]> {
+pub fn next_ulid_bytes(rng: &mut impl CryptoRng) -> Result<[u8; 26]> {
     const MAX_SPIN_CYCLES: u32 = 50;
 
     let mut state = ulid_state()
@@ -172,7 +172,7 @@ fn encode_ulid(timestamp_ms: u64, entropy: &[u8; 10]) -> [u8; 26] {
 }
 
 #[cfg(test)]
-fn gen_ulid(rng: &mut impl Rng) -> String {
+fn gen_ulid(rng: &mut impl CryptoRng) -> String {
     let bytes = next_ulid_bytes(rng).expect("ULID generation failed: monotonic clock stalled");
     // SAFETY: ULID_ALPHABET is pure ASCII; every byte in buf is from it.
     std::str::from_utf8(&bytes)
@@ -183,12 +183,6 @@ fn gen_ulid(rng: &mut impl Rng) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::SeedableRng;
-    use rand::rngs::StdRng;
-
-    fn make_test_rng() -> StdRng {
-        StdRng::seed_from_u64(42)
-    }
 
     /// Shared serialisation lock for tests that touch `ULID_STATE`.
     static ULID_LOCK: Mutex<()> = Mutex::new(());
@@ -208,7 +202,7 @@ mod tests {
     fn ulid_format_26_chars() {
         let _guard = ULID_LOCK.lock().unwrap();
         let _reset = UlidStateReset;
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         let id = gen_ulid(&mut rng);
         assert_eq!(id.len(), 26, "ULID must be 26 characters, got: {id}");
     }
@@ -217,7 +211,7 @@ mod tests {
     fn ulid_chars_in_alphabet() {
         let _guard = ULID_LOCK.lock().unwrap();
         let _reset = UlidStateReset;
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         for _ in 0..50 {
             let id = gen_ulid(&mut rng);
             for ch in id.chars() {

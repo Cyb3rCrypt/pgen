@@ -80,7 +80,7 @@ pub fn validate_prefix(prefix: &str) -> Result<()> {
 /// # Note
 /// Used by unit tests; `run_typeid` bypasses this to avoid per-ID heap allocation.
 #[cfg(test)]
-fn gen_typeid(prefix: &str, rng: &mut impl rand::Rng) -> Result<String> {
+fn gen_typeid(prefix: &str, rng: &mut impl rand::CryptoRng) -> Result<String> {
     validate_prefix(prefix)?;
     let uuid_bytes = crate::uuid::next_v7_bytes(rng)?;
     let suffix = encode_base32(&uuid_bytes);
@@ -99,12 +99,6 @@ fn gen_typeid(prefix: &str, rng: &mut impl rand::Rng) -> Result<String> {
 mod tests {
     use super::*;
     use crate::uuid::V7_LOCK;
-    use rand::SeedableRng;
-    use rand::rngs::StdRng;
-
-    fn make_test_rng() -> StdRng {
-        StdRng::seed_from_u64(42)
-    }
 
     // ── TypeID encoding: deterministic spec vectors ─────────────────────────
 
@@ -156,7 +150,7 @@ mod tests {
     #[test]
     fn typeid_empty_prefix_no_separator() {
         let _v7 = V7_LOCK.lock().unwrap();
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         let id = gen_typeid("", &mut rng).expect("empty prefix must be valid");
         assert_eq!(id.len(), 26, "bare typeid must be 26 chars, got: {id}");
         assert!(
@@ -168,7 +162,7 @@ mod tests {
     #[test]
     fn typeid_format_prefix_separator_suffix() {
         let _v7 = V7_LOCK.lock().unwrap();
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         let id = gen_typeid("user", &mut rng).expect("valid prefix");
         assert_eq!(
             id.len(),
@@ -186,7 +180,7 @@ mod tests {
     #[test]
     fn typeid_suffix_chars_in_alphabet() {
         let _v7 = V7_LOCK.lock().unwrap();
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         let id = gen_typeid("test", &mut rng).expect("valid prefix");
         let suffix = &id[5..]; // skip "test_"
         for ch in suffix.chars() {
@@ -214,7 +208,7 @@ mod tests {
     #[test]
     fn typeid_invalid_prefix_rejected() {
         let _v7 = V7_LOCK.lock().unwrap();
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         let long = "a".repeat(64);
         let cases = ["PREFIX", "12345", "_prefix", "prefix_", long.as_str()];
         for bad in &cases {

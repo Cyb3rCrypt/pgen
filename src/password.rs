@@ -1,6 +1,6 @@
 //! Password generation — character sets, constraints, and the core generator.
 
-use rand::{Rng, seq::IndexedRandom, seq::SliceRandom};
+use rand::{CryptoRng, seq::IndexedRandom, seq::SliceRandom};
 use zeroize::Zeroizing;
 
 // Visually unambiguous character sets, stored as ASCII byte slices.
@@ -33,7 +33,7 @@ pub fn gen_password(
     length: usize,
     required_sets: &[&'static [u8]],
     pool: &[u8],
-    rng: &mut impl Rng,
+    rng: &mut impl CryptoRng,
 ) -> Zeroizing<Vec<u8>> {
     let mut pwd: Vec<u8> = Vec::with_capacity(length);
 
@@ -63,13 +63,8 @@ pub fn gen_password(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{SeedableRng, rngs::StdRng};
     use std::collections::HashSet;
     use zeroize::Zeroize;
-
-    fn make_test_rng() -> StdRng {
-        StdRng::seed_from_u64(42)
-    }
 
     #[test]
     fn character_sets_are_disjoint() {
@@ -90,7 +85,7 @@ mod tests {
     fn passid_returns_correct_length() {
         let sets: &[&[u8]] = &[U_CHARS, L_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
-        let result = gen_password(16, sets, &pool, &mut make_test_rng());
+        let result = gen_password(16, sets, &pool, &mut rand::rng());
         assert_eq!(result.len(), 16);
     }
 
@@ -98,7 +93,7 @@ mod tests {
     fn passid_satisfies_min_per_set() {
         let sets: &[&[u8]] = &[U_CHARS, L_CHARS, N_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         for _ in 0..50 {
             let pwd = gen_password(16, sets, &pool, &mut rng);
             let upper = pwd.iter().filter(|&&c| U_CHARS.contains(&c)).count();
@@ -116,7 +111,7 @@ mod tests {
         // required ~15-30 rejection sampling attempts on average.
         let sets: &[&[u8]] = &[U_CHARS, L_CHARS, S_CHARS, N_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
         for _ in 0..200 {
             let pwd = gen_password(MIN_LENGTH, sets, &pool, &mut rng);
             assert_eq!(pwd.len(), MIN_LENGTH);
@@ -135,7 +130,7 @@ mod tests {
     fn passid_all_chars_from_pool() {
         let sets: &[&[u8]] = &[U_CHARS, S_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
-        let pwd = gen_password(20, sets, &pool, &mut make_test_rng());
+        let pwd = gen_password(20, sets, &pool, &mut rand::rng());
         for &c in pwd.iter() {
             assert!(pool.contains(&c), "unexpected byte '{c}' not in pool");
         }
@@ -145,7 +140,7 @@ mod tests {
     fn passid_all_chars_are_valid_ascii() {
         let sets: &[&[u8]] = &[U_CHARS, L_CHARS, S_CHARS, N_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
-        let pwd = gen_password(20, sets, &pool, &mut make_test_rng());
+        let pwd = gen_password(20, sets, &pool, &mut rand::rng());
         assert!(pwd.is_ascii(), "password contains non-ASCII bytes");
     }
 
@@ -156,7 +151,7 @@ mod tests {
         // out-of-pool characters.
         let sets: &[&[u8]] = &[N_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
-        let pwd = gen_password(10, sets, &pool, &mut make_test_rng());
+        let pwd = gen_password(10, sets, &pool, &mut rand::rng());
         assert_eq!(pwd.len(), 10);
         for &c in pwd.iter() {
             assert!(N_CHARS.contains(&c), "unexpected byte outside digit set");
@@ -202,7 +197,7 @@ mod tests {
         // We manually construct sets in a specific order to force U_CHARS first.
         let sets: &[&[u8]] = &[U_CHARS, L_CHARS, S_CHARS, N_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
-        let mut rng = make_test_rng();
+        let mut rng = rand::rng();
 
         let mut uppercase_at_start_count = 0;
         let trials = 100;

@@ -87,8 +87,10 @@ passid = "1"
 | `passid::nanoid` | `nanoid_default`, `nanoid_custom`, `validate_nanoid_alphabet` |
 | `passid::ksuid` | `gen_ksuid_bytes`, `gen_ksuid_ms_bytes` |
 
-> **Note:** Always pass `rand::rng()` (the OS-backed CSPRNG) as the RNG
-> argument in production paths. Full API documentation will be available on
+> **Note:** All generator functions require `rand::CryptoRng` as a bound on
+> the `rng` parameter. Pass `rand::rng()` (the OS-backed `ThreadRng`, which
+> implements `CryptoRng`) — deterministic/seeded RNGs such as `StdRng` are
+> rejected at compile time. Full API documentation will be available on
 > [docs.rs](https://docs.rs/passid) once the crate is published.
 
 ---
