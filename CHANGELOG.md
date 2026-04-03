@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The crate now exposes a public library API alongside the binary.
 - `std_rng` feature moved from `[dependencies]` to `[dev-dependencies]`;
   release binaries no longer compile the seeded PRNG code paths.
+- `now_ms()` extracted from `uuid.rs` and `ulid.rs` into a single
+  `pub(crate)` function in `lib.rs`. Both modules now call `crate::now_ms()`,
+  eliminating the divergence risk noted in correctness audit finding #1.
 
 ### Fixed
 

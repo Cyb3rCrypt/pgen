@@ -45,17 +45,6 @@ fn mono_state() -> &'static Mutex<MonotonicState> {
     })
 }
 
-/// Returns the current Unix timestamp in milliseconds.
-// NOTE: Identical copy exists in ulid.rs — if you change this, change both.
-fn now_ms() -> Result<u64> {
-    let duration = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| anyhow::anyhow!("system clock is before the UNIX epoch"))?;
-
-    u64::try_from(duration.as_millis())
-        .map_err(|_| anyhow::anyhow!("timestamp overflows u64 (~584 million years from epoch)"))
-}
-
 /// Core monotonic `UUIDv7` byte generator (RFC 9562 §6.2 Method 1).
 ///
 /// For any two calls the returned 16-byte value is strictly greater
@@ -84,7 +73,7 @@ pub fn next_v7_bytes(rng: &mut impl CryptoRng) -> Result<[u8; 16]> {
     let mut cycles: u32 = 0;
 
     let (ms, counter) = loop {
-        let ms = now_ms()?.max(state.last_ms); // clamp: never go backward
+        let ms = crate::now_ms()?.max(state.last_ms); // clamp: never go backward
 
         if ms > state.last_ms {
             // Clock advanced — seed counter randomly per RFC 9562 §6.2.
@@ -346,7 +335,7 @@ mod tests {
         //   (b) The 5 generated UUIDs are still strictly increasing.
         let mut rng = rand::rng();
 
-        let future_ms = now_ms().expect("current time must be available") + 5_000;
+        let future_ms = crate::now_ms().expect("current time must be available") + 5_000;
         {
             let mut state = mono_state().lock().expect("mutex poisoned");
             state.last_ms = future_ms;

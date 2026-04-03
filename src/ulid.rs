@@ -50,17 +50,6 @@ fn ulid_state() -> &'static Mutex<UlidState> {
     })
 }
 
-/// Returns the current Unix timestamp in milliseconds.
-// NOTE: Identical copy exists in uuid.rs — if you change this, change both.
-fn now_ms() -> Result<u64> {
-    let duration = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| anyhow::anyhow!("system clock is before the UNIX epoch"))?;
-
-    u64::try_from(duration.as_millis())
-        .map_err(|_| anyhow::anyhow!("timestamp overflows u64 (~584 million years from epoch)"))
-}
-
 /// Ripple-carry increment on the 80-bit (10-byte) entropy buffer.
 /// Carry propagates from the LSB (byte 9) toward the MSB (byte 0) — standard
 /// big-endian integer increment. The `rev()` iterator processes byte 9 first.
@@ -96,7 +85,7 @@ pub fn next_ulid_bytes(rng: &mut impl CryptoRng) -> Result<[u8; 26]> {
     let mut cycles: u32 = 0;
 
     let (ms, entropy_snapshot) = loop {
-        let ms = now_ms()?.max(state.last_ms); // clamp: never go backward
+        let ms = crate::now_ms()?.max(state.last_ms); // clamp: never go backward
 
         if ms > state.last_ms {
             // New millisecond — reseed entropy from CSPRNG.
@@ -264,7 +253,7 @@ mod tests {
         let _reset = UlidStateReset;
         let mut rng = rand::rng();
 
-        let future_ms = now_ms().expect("current time must be available") + 5_000;
+        let future_ms = crate::now_ms().expect("current time must be available") + 5_000;
         {
             let mut s = ulid_state().lock().unwrap();
             s.last_ms = future_ms;
