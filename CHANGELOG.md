@@ -39,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the function directly with under-sized lengths now receive a descriptive `Err`
   rather than an integer underflow panic. The CLI path is unaffected — `Config`
   validates the same constraint before calling the function.
+- `gen_password` now returns `Err` when `pool` is empty (i.e. no character set
+  is enabled), rather than panicking in the fill loop. Closes the remaining
+  panic path reported in the correctness audit (finding #10).
 - NanoID `nanoid_custom` step formula now uses `u64` intermediates before
   casting back to `usize`, preventing theoretical overflow if size/alphabet
   limits are ever raised.

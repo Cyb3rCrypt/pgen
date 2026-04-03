@@ -27,15 +27,15 @@ pub const MIN_PER_SET: usize = 2;
 /// zeroization on drop — no manual cleanup required by the caller.
 ///
 /// # Errors
-/// Returns `Err` if `length` is less than `required_sets.len() * MIN_PER_SET`
-/// (the minimum needed to place at least `MIN_PER_SET` characters from each
-/// active set).
+/// Returns `Err` if:
+/// - `length` is less than `required_sets.len() * MIN_PER_SET` (the minimum
+///   needed to place at least `MIN_PER_SET` characters from each active set), or
+/// - `pool` is empty (no character set is enabled).
 ///
 /// # Panics
 /// Does not panic in practice: `required_sets` must contain only non-empty
-/// slices and `pool` must be non-empty, both of which are guaranteed when using
-/// the public character-set constants (`U_CHARS`, `L_CHARS`, `S_CHARS`,
-/// `N_CHARS`).
+/// slices, which is guaranteed when using the public character-set constants
+/// (`U_CHARS`, `L_CHARS`, `S_CHARS`, `N_CHARS`).
 #[must_use = "password bytes must not be discarded — Zeroizing ensures cleanup on drop"]
 pub fn gen_password(
     length: usize,
@@ -50,6 +50,9 @@ pub fn gen_password(
              {MIN_PER_SET} characters (minimum needed: {min_required})",
             required_sets.len(),
         );
+    }
+    if pool.is_empty() {
+        bail!("pool is empty — at least one character set must be enabled");
     }
 
     let mut pwd: Vec<u8> = Vec::with_capacity(length);
@@ -68,7 +71,7 @@ pub fn gen_password(
         pwd.push(
             *pool
                 .choose(rng)
-                .expect("invariant: pool is non-empty when required_sets is non-empty"),
+                .expect("invariant: pool is non-empty (guarded above)"),
         );
     }
 
@@ -173,6 +176,13 @@ mod tests {
         for &c in pwd.iter() {
             assert!(N_CHARS.contains(&c), "unexpected byte outside digit set");
         }
+    }
+
+    #[test]
+    fn gen_password_rejects_empty_pool() {
+        // An empty pool with a non-zero length must return Err, not panic.
+        let result = gen_password(10, &[], &[], &mut rand::rng());
+        assert!(result.is_err(), "expected Err for empty pool, got Ok");
     }
 
     #[test]
