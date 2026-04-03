@@ -1,5 +1,6 @@
 //! Password generation — character sets, constraints, and the core generator.
 
+use anyhow::{Result, bail};
 use rand::{CryptoRng, seq::IndexedRandom, seq::SliceRandom};
 use zeroize::Zeroizing;
 
@@ -25,23 +26,39 @@ pub const MIN_PER_SET: usize = 2;
 /// Returns a `Zeroizing<Vec<u8>>` (all ASCII). The wrapper guarantees
 /// zeroization on drop — no manual cleanup required by the caller.
 ///
+/// # Errors
+/// Returns `Err` if `length` is less than `required_sets.len() * MIN_PER_SET`
+/// (the minimum needed to place at least `MIN_PER_SET` characters from each
+/// active set).
+///
 /// # Panics
-/// Panics only if `required_sets` contains an empty slice or `pool` is empty,
-/// both of which are prevented by `Config::try_from` validation.
+/// Does not panic in practice: `required_sets` must contain only non-empty
+/// slices and `pool` must be non-empty, both of which are guaranteed when using
+/// the public character-set constants (`U_CHARS`, `L_CHARS`, `S_CHARS`,
+/// `N_CHARS`).
 #[must_use = "password bytes must not be discarded — Zeroizing ensures cleanup on drop"]
 pub fn gen_password(
     length: usize,
     required_sets: &[&'static [u8]],
     pool: &[u8],
     rng: &mut impl CryptoRng,
-) -> Zeroizing<Vec<u8>> {
+) -> Result<Zeroizing<Vec<u8>>> {
+    let min_required = required_sets.len() * MIN_PER_SET;
+    if length < min_required {
+        bail!(
+            "length {length} is too short: {} set(s) each require at least \
+             {MIN_PER_SET} characters (minimum needed: {min_required})",
+            required_sets.len(),
+        );
+    }
+
     let mut pwd: Vec<u8> = Vec::with_capacity(length);
 
     for set in required_sets {
         for _ in 0..MIN_PER_SET {
             pwd.push(
                 *set.choose(rng)
-                    .expect("invariant: set is non-empty; validated by Config"),
+                    .expect("invariant: required_sets contains only non-empty slices"),
             );
         }
     }
@@ -51,13 +68,13 @@ pub fn gen_password(
         pwd.push(
             *pool
                 .choose(rng)
-                .expect("invariant: pool is non-empty; validated by Config"),
+                .expect("invariant: pool is non-empty when required_sets is non-empty"),
         );
     }
 
     pwd.shuffle(rng);
 
-    Zeroizing::new(pwd)
+    Ok(Zeroizing::new(pwd))
 }
 
 #[cfg(test)]
@@ -85,7 +102,7 @@ mod tests {
     fn passid_returns_correct_length() {
         let sets: &[&[u8]] = &[U_CHARS, L_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
-        let result = gen_password(16, sets, &pool, &mut rand::rng());
+        let result = gen_password(16, sets, &pool, &mut rand::rng()).expect("valid params");
         assert_eq!(result.len(), 16);
     }
 
@@ -95,7 +112,7 @@ mod tests {
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
         let mut rng = rand::rng();
         for _ in 0..50 {
-            let pwd = gen_password(16, sets, &pool, &mut rng);
+            let pwd = gen_password(16, sets, &pool, &mut rng).expect("valid params");
             let upper = pwd.iter().filter(|&&c| U_CHARS.contains(&c)).count();
             let lower = pwd.iter().filter(|&&c| L_CHARS.contains(&c)).count();
             let digit = pwd.iter().filter(|&&c| N_CHARS.contains(&c)).count();
@@ -113,7 +130,7 @@ mod tests {
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
         let mut rng = rand::rng();
         for _ in 0..200 {
-            let pwd = gen_password(MIN_LENGTH, sets, &pool, &mut rng);
+            let pwd = gen_password(MIN_LENGTH, sets, &pool, &mut rng).expect("valid params");
             assert_eq!(pwd.len(), MIN_LENGTH);
             let upper = pwd.iter().filter(|&&c| U_CHARS.contains(&c)).count();
             let lower = pwd.iter().filter(|&&c| L_CHARS.contains(&c)).count();
@@ -130,7 +147,7 @@ mod tests {
     fn passid_all_chars_from_pool() {
         let sets: &[&[u8]] = &[U_CHARS, S_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
-        let pwd = gen_password(20, sets, &pool, &mut rand::rng());
+        let pwd = gen_password(20, sets, &pool, &mut rand::rng()).expect("valid params");
         for &c in pwd.iter() {
             assert!(pool.contains(&c), "unexpected byte '{c}' not in pool");
         }
@@ -140,7 +157,7 @@ mod tests {
     fn passid_all_chars_are_valid_ascii() {
         let sets: &[&[u8]] = &[U_CHARS, L_CHARS, S_CHARS, N_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
-        let pwd = gen_password(20, sets, &pool, &mut rand::rng());
+        let pwd = gen_password(20, sets, &pool, &mut rand::rng()).expect("valid params");
         assert!(pwd.is_ascii(), "password contains non-ASCII bytes");
     }
 
@@ -151,11 +168,24 @@ mod tests {
         // out-of-pool characters.
         let sets: &[&[u8]] = &[N_CHARS];
         let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
-        let pwd = gen_password(10, sets, &pool, &mut rand::rng());
+        let pwd = gen_password(10, sets, &pool, &mut rand::rng()).expect("valid params");
         assert_eq!(pwd.len(), 10);
         for &c in pwd.iter() {
             assert!(N_CHARS.contains(&c), "unexpected byte outside digit set");
         }
+    }
+
+    #[test]
+    fn gen_password_rejects_length_below_set_minimum() {
+        // 2 sets × MIN_PER_SET(2) = 4 mandatory chars minimum.
+        // Passing length=3 must return Err, not panic.
+        let sets: &[&[u8]] = &[U_CHARS, L_CHARS];
+        let pool: Vec<u8> = sets.iter().flat_map(|s| s.iter().copied()).collect();
+        let result = gen_password(3, sets, &pool, &mut rand::rng());
+        assert!(
+            result.is_err(),
+            "expected Err for length < sets.len() * MIN_PER_SET, got Ok"
+        );
     }
 
     #[test]
@@ -168,7 +198,7 @@ mod tests {
         let mut rng = rand::rng();
         let mut seen: HashSet<Vec<u8>> = HashSet::new();
         for _ in 0..100 {
-            let pwd = gen_password(20, sets, &pool, &mut rng);
+            let pwd = gen_password(20, sets, &pool, &mut rng).expect("valid params");
             // Clone inner bytes for the HashSet — Zeroizing doesn't impl Hash.
             // The Zeroizing wrapper drops and zeroizes `pwd` at end of iteration.
             assert!(
@@ -204,7 +234,7 @@ mod tests {
 
         for _ in 0..trials {
             // gen_password takes sets slice directly, preserving order for Phase 1
-            let pwd = gen_password(MIN_LENGTH, sets, &pool, &mut rng);
+            let pwd = gen_password(MIN_LENGTH, sets, &pool, &mut rng).expect("valid params");
             if U_CHARS.contains(&pwd[0]) {
                 uppercase_at_start_count += 1;
             }

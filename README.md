@@ -80,7 +80,7 @@ passid = "1"
 
 | Module | Public API |
 |--------|-----------|
-| `passid::password` | `gen_password` — configurable password generator with zeroized output |
+| `passid::password` | `gen_password` — configurable password generator; returns `Result<Zeroizing<Vec<u8>>>` |
 | `passid::uuid` | `gen_uuid_v4_bytes`, `next_v7_bytes`, `format_uuid_bytes_buf` |
 | `passid::ulid` | `next_ulid_bytes` — monotonic ULID |
 | `passid::typeid` | `encode_base32`, `validate_prefix` |

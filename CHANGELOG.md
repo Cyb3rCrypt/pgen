@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `gen_password` now returns `Result<Zeroizing<Vec<u8>>>` instead of panicking
+  when `length < required_sets.len() * MIN_PER_SET`. Library consumers calling
+  the function directly with under-sized lengths now receive a descriptive `Err`
+  rather than an integer underflow panic. The CLI path is unaffected — `Config`
+  validates the same constraint before calling the function.
 - NanoID `nanoid_custom` step formula now uses `u64` intermediates before
   casting back to `usize`, preventing theoretical overflow if size/alphabet
   limits are ever raised.

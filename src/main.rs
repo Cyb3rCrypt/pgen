@@ -391,7 +391,7 @@ fn run_pass(args: &Args) -> Result<()> {
     // NOTE: Zeroizing covers the in-process buffer only. Bytes passed to
     // write_all() enter kernel I/O buffers that are outside our control.
     for _ in 0..config.count {
-        let bytes = gen_password(config.length, &config.required_sets, &config.pool, &mut rng);
+        let bytes = gen_password(config.length, &config.required_sets, &config.pool, &mut rng)?;
         if let Err(e) = handle.write_all(&bytes) {
             if e.kind() == std::io::ErrorKind::BrokenPipe {
                 break;
