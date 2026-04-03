@@ -83,7 +83,7 @@ passid = "1"
 | `passid::password` | `gen_password` — configurable password generator; returns `Result<Zeroizing<Vec<u8>>>` |
 | `passid::uuid` | `gen_uuid_v4_bytes`, `next_v7_bytes`, `format_uuid_bytes_buf` |
 | `passid::ulid` | `next_ulid_bytes` — monotonic ULID |
-| `passid::typeid` | `encode_base32`, `validate_prefix` |
+| `passid::typeid` | `typeid_string` — generate a full TypeID string · `encode_base32`, `validate_prefix` |
 | `passid::nanoid` | `nanoid_default`, `nanoid_custom`, `validate_nanoid_alphabet` |
 | `passid::ksuid` | `gen_ksuid_bytes`, `gen_ksuid_ms_bytes` |
 

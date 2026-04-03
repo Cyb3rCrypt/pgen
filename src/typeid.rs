@@ -3,6 +3,7 @@
 //! Spec: <https://github.com/jetify-com/typeid>
 
 use anyhow::{Result, bail};
+use rand::CryptoRng;
 
 // ── TypeID base32 encoding ──────────────────────────────────────────────────
 //
@@ -70,17 +71,23 @@ pub fn validate_prefix(prefix: &str) -> Result<()> {
     Ok(())
 }
 
-/// Generates a `TypeID` with the given prefix and a fresh monotonic `UUIDv7` suffix.
+/// Generates a `TypeID` string with the given prefix and a fresh monotonic `UUIDv7` suffix.
 ///
-/// Output format: `prefix_suffix` (26-char base32) or bare suffix when prefix is empty.
+/// Output format: `{prefix}_{suffix}` where suffix is a 26-character Crockford base32
+/// encoded `UUIDv7`. When `prefix` is empty the bare 26-character suffix is returned
+/// with no underscore separator.
+///
+/// This is the ergonomic entry point for library consumers. It validates the prefix,
+/// generates a cryptographically secure monotonic `UUIDv7`, and formats the result.
+/// `run_typeid` in the CLI bypasses this function to avoid per-ID heap allocation.
 ///
 /// # Errors
 /// Returns `Err` if `prefix` fails validation (see [`validate_prefix`]).
 ///
-/// # Note
-/// Used by unit tests; `run_typeid` bypasses this to avoid per-ID heap allocation.
-#[cfg(test)]
-fn gen_typeid(prefix: &str, rng: &mut impl rand::CryptoRng) -> Result<String> {
+/// # Panics
+/// Does not panic in practice: `encode_base32` output is always valid ASCII/UTF-8
+/// by construction of `TYPEID_ALPHABET`.
+pub fn typeid_string(prefix: &str, rng: &mut impl CryptoRng) -> Result<String> {
     validate_prefix(prefix)?;
     let uuid_bytes = crate::uuid::next_v7_bytes(rng)?;
     let suffix = encode_base32(&uuid_bytes);
@@ -151,7 +158,7 @@ mod tests {
     fn typeid_empty_prefix_no_separator() {
         let _v7 = V7_LOCK.lock().unwrap();
         let mut rng = rand::rng();
-        let id = gen_typeid("", &mut rng).expect("empty prefix must be valid");
+        let id = typeid_string("", &mut rng).expect("empty prefix must be valid");
         assert_eq!(id.len(), 26, "bare typeid must be 26 chars, got: {id}");
         assert!(
             !id.contains('_'),
@@ -163,7 +170,7 @@ mod tests {
     fn typeid_format_prefix_separator_suffix() {
         let _v7 = V7_LOCK.lock().unwrap();
         let mut rng = rand::rng();
-        let id = gen_typeid("user", &mut rng).expect("valid prefix");
+        let id = typeid_string("user", &mut rng).expect("valid prefix");
         assert_eq!(
             id.len(),
             31,
@@ -181,7 +188,7 @@ mod tests {
     fn typeid_suffix_chars_in_alphabet() {
         let _v7 = V7_LOCK.lock().unwrap();
         let mut rng = rand::rng();
-        let id = gen_typeid("test", &mut rng).expect("valid prefix");
+        let id = typeid_string("test", &mut rng).expect("valid prefix");
         let suffix = &id[5..]; // skip "test_"
         for ch in suffix.chars() {
             assert!(
@@ -196,7 +203,7 @@ mod tests {
         let _v7 = V7_LOCK.lock().unwrap();
         let mut rng = rand::rng();
         for _ in 0..50 {
-            let id = gen_typeid("chk", &mut rng).expect("valid prefix");
+            let id = typeid_string("chk", &mut rng).expect("valid prefix");
             let first = id.chars().nth(4).expect("suffix must exist"); // "chk_X..."
             assert!(
                 first <= '7',
@@ -213,7 +220,7 @@ mod tests {
         let cases = ["PREFIX", "12345", "_prefix", "prefix_", long.as_str()];
         for bad in &cases {
             assert!(
-                gen_typeid(bad, &mut rng).is_err(),
+                typeid_string(bad, &mut rng).is_err(),
                 "expected error for invalid prefix {bad:?}"
             );
         }
@@ -254,7 +261,7 @@ mod tests {
         let mut rng = rand::rng();
         let mut prev = String::new();
         for i in 0..50u32 {
-            let id = gen_typeid("ord", &mut rng).expect("valid prefix");
+            let id = typeid_string("ord", &mut rng).expect("valid prefix");
             let suffix = id[4..].to_owned(); // skip "ord_"
             assert!(
                 suffix > prev,

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `passid::typeid::typeid_string(prefix, rng)` — public ergonomic entry point for
+  generating a `TypeID` string. Validates the prefix, generates a monotonic `UUIDv7`,
+  and returns `prefix_<26-char base32 suffix>` (or bare suffix when prefix is empty).
+  Previously consumers had to manually compose `validate_prefix`, `next_v7_bytes`, and
+  `encode_base32`, a security-critical multi-step operation with no safe single entry
+  point.
+
 ### Changed
 
 - Refactored monolithic `src/main.rs` (2 222 lines) into a `lib` + `bin`
