@@ -11,6 +11,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.0] — 2026-04-04
+
+### Changed (Breaking)
+
+- **All public library functions now return typed errors instead of `anyhow::Error`.**
+  Every fallible function in the library now returns `Result<T, SpecificError>` where
+  the error type is a `thiserror`-derived enum with matchable variants. This is a
+  semver-breaking change: callers that stored or propagated `anyhow::Result<T>` from
+  library functions must update their code. Code using `?` into an `anyhow::Result`
+  context requires no changes — conversion is automatic.
+
+### Added
+
+- `passid::TimeError` — clock error enum used by `UuidError` and `UlidError` via `#[from]`.
+  Variants: `BeforeEpoch`, `Overflow`.
+- `passid::UuidError` — error enum for `next_v7_bytes`.
+  Variants: `MutexPoisoned`, `CounterExhausted(u32)`, `Clock(#[from] TimeError)`.
+- `passid::UlidError` — error enum for `next_ulid_bytes`.
+  Variants: `MutexPoisoned`, `EntropyExhausted(u32)`, `Clock(#[from] TimeError)`.
+- `passid::KsuidError` — error enum for `gen_ksuid_bytes` and `gen_ksuid_ms_bytes`.
+  Variants: `Clock(#[from] std::time::SystemTimeError)`, `PreEpoch`, `EpochOverflow`.
+- `passid::PasswordError` — error enum for `gen_password`.
+  Variants: `LengthTooShort { length, set_count, min_required }`, `EmptyPool`.
+- `passid::NanoidError` — error enum for `validate_nanoid_alphabet`.
+  Variants: `TooShort(usize, usize)`, `TooLong(usize, usize)`, `NonPrintable(u8)`, `Duplicate(char)`.
+- `passid::TypeIdError` — error enum for `validate_prefix` and `typeid_string`.
+  Variants: `NonAscii(String)`, `TooLong(usize, usize)`, `BadStart(String)`, `BadEnd(String)`,
+  `InvalidChar(String, char)`, `Uuid(#[from] UuidError)`.
+- All six module error types re-exported from the crate root (`passid::PasswordError`, etc.).
+- `thiserror = "2"` added as a dependency.
+
+---
+
 ## [1.7.0] — 2026-04-04
 
 ### Added
@@ -349,7 +382,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pre-built binaries for Windows x86-64, Linux x86-64, Linux aarch64, macOS x86-64, macOS aarch64 via GitHub Actions release workflow.
 - CI pipeline: `cargo test`, `cargo clippy -D warnings`, `cargo fmt --check`, `cargo audit`.
 
-[Unreleased]: https://github.com/sharma-vikram/passid/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/sharma-vikram/passid/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/sharma-vikram/passid/compare/v1.7.0...v2.0.0
 [1.7.0]: https://github.com/sharma-vikram/passid/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/sharma-vikram/passid/compare/v1.5.1...v1.6.0
 [1.5.1]: https://github.com/sharma-vikram/passid/compare/v1.5.0...v1.5.1

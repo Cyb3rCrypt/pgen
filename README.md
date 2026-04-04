@@ -34,11 +34,11 @@ Download the latest release for your platform from the [Releases](../../releases
 
 | Platform | File |
 |----------|------|
-| Windows x86-64 | `passid-v1.7.0-x86_64-pc-windows-msvc.zip` |
-| Linux x86-64 | `passid-v1.7.0-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux aarch64 | `passid-v1.7.0-aarch64-unknown-linux-gnu.tar.gz` |
-| macOS x86-64 | `passid-v1.7.0-x86_64-apple-darwin.tar.gz` |
-| macOS Apple Silicon | `passid-v1.7.0-aarch64-apple-darwin.tar.gz` |
+| Windows x86-64 | `passid-v2.0.0-x86_64-pc-windows-msvc.zip` |
+| Linux x86-64 | `passid-v2.0.0-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux aarch64 | `passid-v2.0.0-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS x86-64 | `passid-v2.0.0-x86_64-apple-darwin.tar.gz` |
+| macOS Apple Silicon | `passid-v2.0.0-aarch64-apple-darwin.tar.gz` |
 
 ### Build from source
 
@@ -73,19 +73,21 @@ Or in `Cargo.toml`:
 
 ```toml
 [dependencies]
-passid = "1"
+passid = "2"
 ```
 
 ### Modules
 
 | Module | Public API |
 |--------|-----------|
-| `passid::password` | `gen_password` — configurable password generator; returns `Result<Zeroizing<Vec<u8>>>` |
-| `passid::uuid` | `gen_uuid_v4_bytes`, `next_v7_bytes`, `format_uuid_bytes_buf` |
-| `passid::ulid` | `next_ulid_bytes` — monotonic ULID |
-| `passid::typeid` | `typeid_string` — generate a full TypeID string · `encode_base32`, `validate_prefix` |
-| `passid::nanoid` | `nanoid_default`, `nanoid_custom`, `validate_nanoid_alphabet` |
-| `passid::ksuid` | `gen_ksuid_bytes`, `gen_ksuid_ms_bytes` |
+| `passid::password` | `gen_password` — returns `Result<Zeroizing<Vec<u8>>, PasswordError>` |
+| `passid::uuid` | `gen_uuid_v4_bytes`, `next_v7_bytes` → `Result<_, UuidError>`, `format_uuid_bytes_buf` |
+| `passid::ulid` | `next_ulid_bytes` → `Result<_, UlidError>` — monotonic ULID |
+| `passid::typeid` | `typeid_string`, `validate_prefix` → `Result<_, TypeIdError>` · `encode_base32` |
+| `passid::nanoid` | `nanoid_default`, `nanoid_custom`, `validate_nanoid_alphabet` → `Result<_, NanoidError>` |
+| `passid::ksuid` | `gen_ksuid_bytes`, `gen_ksuid_ms_bytes` → `Result<_, KsuidError>` |
+
+All error types are re-exported from the crate root (`passid::PasswordError`, `passid::UuidError`, etc.) and implement `std::error::Error`, so they compose naturally with `anyhow` or any other error-handling library via `?`.
 
 > **Note:** All generator functions require `rand::CryptoRng` as a bound on
 > the `rng` parameter. Pass `rand::rng()` (the OS-backed `ThreadRng`, which
