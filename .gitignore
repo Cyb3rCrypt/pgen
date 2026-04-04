@@ -31,3 +31,9 @@ doc/
 
 # VSCode
 .vscode/
+
+# Copilot Related
+.github/skills/*
+.github/agents/*
+.github/copilot-instructions.md
+.github/prompts/*

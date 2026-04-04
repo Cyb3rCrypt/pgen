@@ -2,7 +2,6 @@
 //!
 //! Spec: <https://github.com/jetify-com/typeid>
 
-use anyhow::{Result, bail};
 use rand::CryptoRng;
 
 // ── TypeID base32 encoding ──────────────────────────────────────────────────
@@ -40,6 +39,31 @@ pub fn encode_base32(uuid: &[u8; 16]) -> [u8; 26] {
     out
 }
 
+/// Error returned by [`validate_prefix`] and [`typeid_string`].
+#[derive(Debug, thiserror::Error)]
+pub enum TypeIdError {
+    /// The prefix contains non-ASCII bytes.
+    #[error("TypeID prefix {0:?} must be ASCII")]
+    NonAscii(String),
+    /// The prefix exceeds the 63-byte spec limit.
+    #[error("TypeID prefix is {0} bytes; maximum is {1}")]
+    TooLong(usize, usize),
+    /// The prefix does not begin with a lowercase ASCII letter.
+    #[error("TypeID prefix {0:?} must start with a lowercase ASCII letter [a-z]")]
+    BadStart(String),
+    /// The prefix does not end with a lowercase ASCII letter.
+    #[error("TypeID prefix {0:?} must end with a lowercase ASCII letter [a-z]")]
+    BadEnd(String),
+    /// The prefix contains a character outside `[a-z_]`.
+    #[error(
+        "TypeID prefix {0:?} contains invalid character {1:?}; only lowercase ASCII letters and underscores are permitted"
+    )]
+    InvalidChar(String, char),
+    /// The underlying `UUIDv7` generator failed.
+    #[error(transparent)]
+    Uuid(#[from] crate::uuid::UuidError),
+}
+
 /// Validates a `TypeID` prefix against the spec (v0.3.0).
 ///
 /// Returns `Ok(())` if the prefix is valid, or a descriptive `Err` otherwise.
@@ -48,28 +72,25 @@ pub fn encode_base32(uuid: &[u8; 16]) -> [u8; 26] {
 /// Returns `Err` if the prefix is non-ASCII, exceeds 63 bytes, does not
 /// start and end with a lowercase letter, or contains characters other
 /// than `[a-z_]`.
-pub fn validate_prefix(prefix: &str) -> Result<()> {
+pub fn validate_prefix(prefix: &str) -> Result<(), TypeIdError> {
     if prefix.is_empty() {
         return Ok(());
     }
     if !prefix.is_ascii() {
-        bail!("TypeID prefix {prefix:?} must be ASCII.");
+        return Err(TypeIdError::NonAscii(prefix.to_owned()));
     }
     let byte_len = prefix.len();
     if byte_len > PREFIX_MAX_LEN {
-        bail!("TypeID prefix is {byte_len} bytes; maximum is {PREFIX_MAX_LEN}.");
+        return Err(TypeIdError::TooLong(byte_len, PREFIX_MAX_LEN));
     }
     if !prefix.starts_with(|c: char| c.is_ascii_lowercase()) {
-        bail!("TypeID prefix {prefix:?} must start with a lowercase ASCII letter [a-z].");
+        return Err(TypeIdError::BadStart(prefix.to_owned()));
     }
     if !prefix.ends_with(|c: char| c.is_ascii_lowercase()) {
-        bail!("TypeID prefix {prefix:?} must end with a lowercase ASCII letter [a-z].");
+        return Err(TypeIdError::BadEnd(prefix.to_owned()));
     }
     if let Some(bad) = prefix.chars().find(|&c| !matches!(c, 'a'..='z' | '_')) {
-        bail!(
-            "TypeID prefix {prefix:?} contains invalid character {bad:?}; \
-             only lowercase ASCII letters and underscores are permitted."
-        );
+        return Err(TypeIdError::InvalidChar(prefix.to_owned(), bad));
     }
     Ok(())
 }
@@ -90,7 +111,7 @@ pub fn validate_prefix(prefix: &str) -> Result<()> {
 /// # Panics
 /// Does not panic in practice: `encode_base32` output is always valid ASCII/UTF-8
 /// by construction of `TYPEID_ALPHABET`.
-pub fn typeid_string(prefix: &str, rng: &mut impl CryptoRng) -> Result<String> {
+pub fn typeid_string(prefix: &str, rng: &mut impl CryptoRng) -> Result<String, TypeIdError> {
     validate_prefix(prefix)?;
     let uuid_bytes = crate::uuid::next_v7_bytes(rng)?;
     let suffix = encode_base32(&uuid_bytes);

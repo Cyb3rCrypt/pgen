@@ -1,6 +1,5 @@
 //! UUID v4 and monotonic UUID v7 generation (RFC 4122 / RFC 9562).
 
-use anyhow::{Result, bail};
 use rand::{CryptoRng, RngExt};
 use std::sync::{Mutex, OnceLock};
 
@@ -45,6 +44,21 @@ fn mono_state() -> &'static Mutex<MonotonicState> {
     })
 }
 
+/// Error returned by [`next_v7_bytes`].
+#[derive(Debug, thiserror::Error)]
+pub enum UuidError {
+    /// The `MONO_STATE` mutex was poisoned by a previous thread panic.
+    #[error("UUIDv7 monotonic state mutex is poisoned")]
+    MutexPoisoned,
+    /// The 12-bit counter exhausted all 4 096 slots within a single millisecond
+    /// and the system clock did not advance within the spin-wait budget (~5 ms).
+    #[error("UUIDv7 counter exhausted: clock did not advance within {0} sleep cycles (~5 ms)")]
+    CounterExhausted(u32),
+    /// The system clock could not be read (before epoch or timestamp overflow).
+    #[error(transparent)]
+    Clock(#[from] crate::TimeError),
+}
+
 /// Core monotonic `UUIDv7` byte generator (RFC 9562 §6.2 Method 1).
 ///
 /// For any two calls the returned 16-byte value is strictly greater
@@ -54,21 +68,21 @@ fn mono_state() -> &'static Mutex<MonotonicState> {
 /// is unconditional.
 ///
 /// # Errors
-/// Returns `Err` if the system clock does not advance within ~5 ms (50 sleep
-/// cycles of 100 µs each). This indicates a frozen or suspended clock and
-/// monotonic `UUIDv7` generation cannot progress safely.
+/// Returns [`UuidError::CounterExhausted`] if the system clock does not
+/// advance within ~5 ms (50 sleep cycles of 100 µs each). Returns
+/// [`UuidError::MutexPoisoned`] if the internal state mutex was poisoned by a
+/// previous thread panic. Returns [`UuidError::Clock`] if the system clock is
+/// before the Unix epoch or the timestamp overflows `u64`.
 ///
 /// # Panics
 /// Does not panic in practice: the counter is 12 bits so `counter >> 8` always
 /// fits `u8`, and `counter & 0xFF` always fits `u8`.
-pub fn next_v7_bytes(rng: &mut impl CryptoRng) -> Result<[u8; 16]> {
+pub fn next_v7_bytes(rng: &mut impl CryptoRng) -> Result<[u8; 16], UuidError> {
     // 50 sleep cycles × 100 µs each = 5 ms total (not 500 ms — previous comment was wrong).
     // A real clock must advance within this window; if not, the system is broken.
     const MAX_SPIN_CYCLES: u32 = 50;
 
-    let mut state = mono_state()
-        .lock()
-        .map_err(|_| anyhow::anyhow!("MonotonicState mutex poisoned"))?;
+    let mut state = mono_state().lock().map_err(|_| UuidError::MutexPoisoned)?;
     let mut spins: u32 = 0;
     let mut cycles: u32 = 0;
 
@@ -102,15 +116,10 @@ pub fn next_v7_bytes(rng: &mut impl CryptoRng) -> Result<[u8; 16]> {
             spins = 0;
             cycles += 1;
             if cycles >= MAX_SPIN_CYCLES {
-                bail!(
-                    "UUIDv7 counter exhausted: clock did not advance within \
-                     {MAX_SPIN_CYCLES} sleep cycles (~5 ms)"
-                );
+                return Err(UuidError::CounterExhausted(MAX_SPIN_CYCLES));
             }
         }
-        state = mono_state()
-            .lock()
-            .map_err(|_| anyhow::anyhow!("MonotonicState mutex poisoned"))?;
+        state = mono_state().lock().map_err(|_| UuidError::MutexPoisoned)?;
     };
     drop(state); // release ASAP; don't hold the lock while building the UUID bytes
     let ms_be = ms.to_be_bytes(); // [2..8] = lower 48 bits

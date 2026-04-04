@@ -1,6 +1,5 @@
 //! Password generation — character sets, constraints, and the core generator.
 
-use anyhow::{Result, bail};
 use rand::{CryptoRng, seq::IndexedRandom, seq::SliceRandom};
 use zeroize::Zeroizing;
 
@@ -15,6 +14,25 @@ pub const MIN_LENGTH: usize = 10;
 pub const MAX_LENGTH: usize = 4096;
 pub const MAX_COUNT: usize = 10_000;
 pub const MIN_PER_SET: usize = 2;
+
+/// Error returned by [`gen_password`].
+#[derive(Debug, thiserror::Error)]
+pub enum PasswordError {
+    /// The requested `length` is less than `set_count * 2` — not enough room
+    /// to place the mandatory minimum of 2 characters from each active set.
+    #[error(
+        "length {length} is too short: {set_count} set(s) each require at least \
+             2 characters (minimum needed: {min_required})"
+    )]
+    LengthTooShort {
+        length: usize,
+        set_count: usize,
+        min_required: usize,
+    },
+    /// No character set was enabled — the pool is empty.
+    #[error("pool is empty — at least one character set must be enabled")]
+    EmptyPool,
+}
 
 /// Generates a single password of **exactly** `length` ASCII bytes.
 ///
@@ -42,17 +60,17 @@ pub fn gen_password(
     required_sets: &[&'static [u8]],
     pool: &[u8],
     rng: &mut impl CryptoRng,
-) -> Result<Zeroizing<Vec<u8>>> {
+) -> Result<Zeroizing<Vec<u8>>, PasswordError> {
     let min_required = required_sets.len() * MIN_PER_SET;
     if length < min_required {
-        bail!(
-            "length {length} is too short: {} set(s) each require at least \
-             {MIN_PER_SET} characters (minimum needed: {min_required})",
-            required_sets.len(),
-        );
+        return Err(PasswordError::LengthTooShort {
+            length,
+            set_count: required_sets.len(),
+            min_required,
+        });
     }
     if pool.is_empty() {
-        bail!("pool is empty — at least one character set must be enabled");
+        return Err(PasswordError::EmptyPool);
     }
 
     let mut pwd: Vec<u8> = Vec::with_capacity(length);

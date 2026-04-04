@@ -2,7 +2,6 @@
 //!
 //! Spec: <https://github.com/ai/nanoid>
 
-use anyhow::{Result, bail};
 use rand::CryptoRng;
 
 // ── NanoID constants ─────────────────────────────────────────────────────────
@@ -26,6 +25,23 @@ const _: () = assert!(
     "NANOID_URL_ALPHABET must be exactly 64 bytes for bias-free b&63 indexing"
 );
 
+/// Error returned by [`validate_nanoid_alphabet`].
+#[derive(Debug, thiserror::Error)]
+pub enum NanoidError {
+    /// The alphabet has fewer than [`NANOID_ALPHABET_MIN`] characters.
+    #[error("NanoID alphabet is too short ({0} char(s)); minimum is {1}")]
+    TooShort(usize, usize),
+    /// The alphabet has more than [`NANOID_ALPHABET_MAX`] characters.
+    #[error("NanoID alphabet is too long ({0} chars); maximum is {1}")]
+    TooLong(usize, usize),
+    /// The alphabet contains a byte outside the printable ASCII range (0x20–0x7E).
+    #[error("NanoID alphabet contains non-printable or non-ASCII byte 0x{0:02X}")]
+    NonPrintable(u8),
+    /// The alphabet contains a repeated character.
+    #[error("NanoID alphabet contains duplicate character {0:?}")]
+    Duplicate(char),
+}
+
 /// Validates a custom `NanoID` alphabet.
 ///
 /// Rules:
@@ -35,27 +51,24 @@ const _: () = assert!(
 ///
 /// # Errors
 /// Returns `Err` with a descriptive message if any rule is violated.
-pub fn validate_nanoid_alphabet(alphabet: &[u8]) -> Result<()> {
+pub fn validate_nanoid_alphabet(alphabet: &[u8]) -> Result<(), NanoidError> {
     let len = alphabet.len();
     if len < NANOID_ALPHABET_MIN {
-        bail!("NanoID alphabet is too short ({len} char(s)); minimum is {NANOID_ALPHABET_MIN}.");
+        return Err(NanoidError::TooShort(len, NANOID_ALPHABET_MIN));
     }
     if len > NANOID_ALPHABET_MAX {
-        bail!("NanoID alphabet is too long ({len} chars); maximum is {NANOID_ALPHABET_MAX}.");
+        return Err(NanoidError::TooLong(len, NANOID_ALPHABET_MAX));
     }
     for &b in alphabet {
         if !(0x20..=0x7E).contains(&b) {
-            bail!("NanoID alphabet contains non-printable or non-ASCII byte 0x{b:02X}.");
+            return Err(NanoidError::NonPrintable(b));
         }
     }
 
     let mut sorted = alphabet.to_vec();
     sorted.sort_unstable();
     if let Some(w) = sorted.windows(2).find(|w| w[0] == w[1]) {
-        bail!(
-            "NanoID alphabet contains duplicate character {:?}.",
-            char::from(w[0])
-        );
+        return Err(NanoidError::Duplicate(char::from(w[0])));
     }
     Ok(())
 }

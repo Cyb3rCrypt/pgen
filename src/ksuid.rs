@@ -3,7 +3,6 @@
 //! Spec: <https://github.com/segmentio/ksuid>
 //! `KsuidMs` variant: <https://github.com/svix/rust-ksuid>
 
-use anyhow::Result;
 use rand::CryptoRng;
 
 // ── KSUID constants ──────────────────────────────────────────────────────────
@@ -103,6 +102,21 @@ fn ksuid_decode(s: &[u8]) -> anyhow::Result<[u8; KSUID_TOTAL_BYTES]> {
     Ok(raw)
 }
 
+/// Error returned by [`gen_ksuid_bytes`] and [`gen_ksuid_ms_bytes`].
+#[derive(Debug, thiserror::Error)]
+pub enum KsuidError {
+    /// The system clock returned an error (e.g. time went backwards past the
+    /// Unix epoch). Wraps [`std::time::SystemTimeError`] with full error chain.
+    #[error("system clock error: {0}")]
+    Clock(#[from] std::time::SystemTimeError),
+    /// The system clock is set before the KSUID epoch (2014-05-13T16:53:20Z).
+    #[error("system clock is before the KSUID epoch (2014-05-13)")]
+    PreEpoch,
+    /// The KSUID timestamp offset overflows `u32` (~year 2150).
+    #[error("KSUID timestamp overflows u32 (~year 2150)")]
+    EpochOverflow,
+}
+
 /// Returns `(ksuid_ts_secs, subsec_ms)` from a single `now()` call, where
 /// `ksuid_ts_secs` is seconds since the KSUID epoch (2014-05-13T16:53:20Z)
 /// and `subsec_ms` is the sub-second millisecond component (0..=999).
@@ -113,22 +127,19 @@ fn ksuid_decode(s: &[u8]) -> anyhow::Result<[u8; KSUID_TOTAL_BYTES]> {
 /// # Errors
 /// - System clock is set before the KSUID epoch (pre-2014)
 /// - Resulting offset overflows `u32` (~year 2150)
-fn ksuid_timestamp_parts() -> Result<(u32, u32)> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| anyhow::anyhow!("system clock error: {e}"))?;
+fn ksuid_timestamp_parts() -> Result<(u32, u32), KsuidError> {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?; // SystemTimeError → KsuidError::Clock via #[from]
     let ksuid_ts = now
         .as_secs()
         .checked_sub(KSUID_EPOCH_OFFSET)
-        .ok_or_else(|| anyhow::anyhow!("system clock is before the KSUID epoch (2014-05-13)"))?;
-    let ts = u32::try_from(ksuid_ts)
-        .map_err(|_| anyhow::anyhow!("KSUID timestamp overflows u32 (~year 2150)"))?;
+        .ok_or(KsuidError::PreEpoch)?;
+    let ts = u32::try_from(ksuid_ts).map_err(|_| KsuidError::EpochOverflow)?;
     Ok((ts, now.subsec_millis()))
 }
 
 /// Returns seconds since the KSUID epoch.
 /// Thin wrapper around [`ksuid_timestamp_parts`] for callers that only need seconds.
-fn ksuid_timestamp_secs() -> Result<u32> {
+fn ksuid_timestamp_secs() -> Result<u32, KsuidError> {
     ksuid_timestamp_parts().map(|(ts, _)| ts)
 }
 
@@ -140,7 +151,7 @@ fn ksuid_timestamp_secs() -> Result<u32> {
 /// # Errors
 /// Returns `Err` if the system clock is set before the KSUID epoch
 /// (2014-05-13) or if the timestamp offset overflows `u32` (~year 2150).
-pub fn gen_ksuid_bytes(rng: &mut impl CryptoRng) -> Result<[u8; KSUID_STRING_LEN]> {
+pub fn gen_ksuid_bytes(rng: &mut impl CryptoRng) -> Result<[u8; KSUID_STRING_LEN], KsuidError> {
     let ts = ksuid_timestamp_secs()?;
     let mut raw = [0u8; KSUID_TOTAL_BYTES];
     raw[..4].copy_from_slice(&ts.to_be_bytes());
@@ -165,7 +176,7 @@ pub fn gen_ksuid_bytes(rng: &mut impl CryptoRng) -> Result<[u8; KSUID_STRING_LEN
 /// # Panics
 /// Does not panic in practice: `subsec_millis()` returns 0–999 ms, so
 /// `subsec_ms / 4` is always 0–249 which fits `u8`.
-pub fn gen_ksuid_ms_bytes(rng: &mut impl CryptoRng) -> Result<[u8; KSUID_STRING_LEN]> {
+pub fn gen_ksuid_ms_bytes(rng: &mut impl CryptoRng) -> Result<[u8; KSUID_STRING_LEN], KsuidError> {
     let (ts, subsec_ms) = ksuid_timestamp_parts()?;
 
     // 4ms resolution: 0..=999 ms → 0..=249 (fits u8 with no truncation risk).

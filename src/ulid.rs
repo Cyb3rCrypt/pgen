@@ -2,7 +2,6 @@
 //!
 //! Spec: <https://github.com/ulid/spec>
 
-use anyhow::{Result, bail};
 use rand::{CryptoRng, RngExt};
 use std::sync::{Mutex, OnceLock};
 
@@ -65,6 +64,21 @@ fn ulid_increment(entropy: &mut [u8; 10]) -> bool {
     false // overflow: every byte wrapped to 0
 }
 
+/// Error returned by [`next_ulid_bytes`].
+#[derive(Debug, thiserror::Error)]
+pub enum UlidError {
+    /// The `ULID_STATE` mutex was poisoned by a previous thread panic.
+    #[error("ULID monotonic state mutex is poisoned")]
+    MutexPoisoned,
+    /// The 80-bit entropy field exhausted all values within a single millisecond
+    /// and the system clock did not advance within the spin-wait budget (~5 ms).
+    #[error("ULID entropy exhausted: clock did not advance within {0} sleep cycles (~5 ms)")]
+    EntropyExhausted(u32),
+    /// The system clock could not be read (before epoch or timestamp overflow).
+    #[error(transparent)]
+    Clock(#[from] crate::TimeError),
+}
+
 /// Returns the next monotonic ULID as a raw `[u8; 26]` of ASCII bytes.
 ///
 /// Spin-wait behaviour on entropy overflow mirrors `next_v7_bytes`:
@@ -72,15 +86,15 @@ fn ulid_increment(entropy: &mut [u8; 10]) -> bool {
 /// clock does not advance within that window.
 ///
 /// # Errors
-/// Returns `Err` if the system clock is before the Unix epoch, the timestamp
-/// overflows `u64`, or 80-bit entropy is exhausted and the clock does not
-/// advance within ~5 ms (50 sleep cycles of 100 µs each).
-pub fn next_ulid_bytes(rng: &mut impl CryptoRng) -> Result<[u8; 26]> {
+/// Returns [`UlidError::EntropyExhausted`] if 80-bit entropy is exhausted and
+/// the clock does not advance within ~5 ms (50 sleep cycles of 100 µs each).
+/// Returns [`UlidError::MutexPoisoned`] if the internal state mutex was
+/// poisoned by a previous thread panic. Returns [`UlidError::Clock`] if the
+/// system clock is before the Unix epoch or the timestamp overflows `u64`.
+pub fn next_ulid_bytes(rng: &mut impl CryptoRng) -> Result<[u8; 26], UlidError> {
     const MAX_SPIN_CYCLES: u32 = 50;
 
-    let mut state = ulid_state()
-        .lock()
-        .map_err(|_| anyhow::anyhow!("UlidState mutex poisoned"))?;
+    let mut state = ulid_state().lock().map_err(|_| UlidError::MutexPoisoned)?;
     let mut spins: u32 = 0;
     let mut cycles: u32 = 0;
 
@@ -107,17 +121,12 @@ pub fn next_ulid_bytes(rng: &mut impl CryptoRng) -> Result<[u8; 26]> {
             spins = 0;
             cycles += 1;
             if cycles >= MAX_SPIN_CYCLES {
-                bail!(
-                    "ULID entropy exhausted: clock did not advance within \
-                     {MAX_SPIN_CYCLES} sleep cycles (~5 ms)"
-                );
+                return Err(UlidError::EntropyExhausted(MAX_SPIN_CYCLES));
             }
         } else {
             std::hint::spin_loop();
         }
-        state = ulid_state()
-            .lock()
-            .map_err(|_| anyhow::anyhow!("UlidState mutex poisoned"))?;
+        state = ulid_state().lock().map_err(|_| UlidError::MutexPoisoned)?;
     };
 
     drop(state); // release ASAP; encoding is pure computation
