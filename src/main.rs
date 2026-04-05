@@ -216,6 +216,16 @@ fn resolve_count(count: Option<usize>) -> Result<usize> {
     }
 }
 
+/// Writes `buf` to `handle`. Returns `true` if the caller should stop writing
+/// (broken pipe), or propagates any other I/O error.
+fn write_or_break(handle: &mut impl Write, buf: &[u8]) -> Result<bool> {
+    match handle.write_all(buf) {
+        Ok(()) => Ok(false),
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(true),
+        Err(e) => Err(e.into()),
+    }
+}
+
 fn run_ksuid(args: &Args) -> Result<()> {
     let count = resolve_count(args.count)?;
     let ms_mode = args.ksuid_ms;
@@ -238,17 +248,8 @@ fn run_ksuid(args: &Args) -> Result<()> {
         } else {
             gen_ksuid_bytes(&mut rng)?
         };
-        if let Err(e) = handle.write_all(&buf) {
-            if e.kind() == std::io::ErrorKind::BrokenPipe {
-                break;
-            }
-            return Err(e.into());
-        }
-        if let Err(e) = handle.write_all(b"\n") {
-            if e.kind() == std::io::ErrorKind::BrokenPipe {
-                break;
-            }
-            return Err(e.into());
+        if write_or_break(&mut handle, &buf)? || write_or_break(&mut handle, b"\n")? {
+            break;
         }
     }
     if let Err(e) = handle.flush() {
@@ -301,17 +302,8 @@ fn run_nanoid(args: &Args) -> Result<()> {
             Some(alphabet) => nanoid_custom(alphabet, size, &mut rng),
             None => nanoid_default(size, &mut rng),
         };
-        if let Err(e) = handle.write_all(id.as_bytes()) {
-            if e.kind() == std::io::ErrorKind::BrokenPipe {
-                break;
-            }
-            return Err(e.into());
-        }
-        if let Err(e) = handle.write_all(b"\n") {
-            if e.kind() == std::io::ErrorKind::BrokenPipe {
-                break;
-            }
-            return Err(e.into());
+        if write_or_break(&mut handle, id.as_bytes())? || write_or_break(&mut handle, b"\n")? {
+            break;
         }
     }
     if let Err(e) = handle.flush() {
@@ -337,17 +329,8 @@ fn run_ulid(args: &Args) -> Result<()> {
     // Zero-alloc hot path: write raw [u8; 26] stack buffer directly.
     for _ in 0..count {
         let buf = next_ulid_bytes(&mut rng)?;
-        if let Err(e) = handle.write_all(&buf) {
-            if e.kind() == std::io::ErrorKind::BrokenPipe {
-                break;
-            }
-            return Err(e.into());
-        }
-        if let Err(e) = handle.write_all(b"\n") {
-            if e.kind() == std::io::ErrorKind::BrokenPipe {
-                break;
-            }
-            return Err(e.into());
+        if write_or_break(&mut handle, &buf)? || write_or_break(&mut handle, b"\n")? {
+            break;
         }
     }
     if let Err(e) = handle.flush() {
@@ -392,17 +375,8 @@ fn run_pass(args: &Args) -> Result<()> {
     // write_all() enter kernel I/O buffers that are outside our control.
     for _ in 0..config.count {
         let bytes = gen_password(config.length, &config.required_sets, &config.pool, &mut rng)?;
-        if let Err(e) = handle.write_all(&bytes) {
-            if e.kind() == std::io::ErrorKind::BrokenPipe {
-                break;
-            }
-            return Err(e.into());
-        }
-        if let Err(e) = handle.write_all(b"\n") {
-            if e.kind() == std::io::ErrorKind::BrokenPipe {
-                break;
-            }
-            return Err(e.into());
+        if write_or_break(&mut handle, &bytes)? || write_or_break(&mut handle, b"\n")? {
+            break;
         }
     }
     if let Err(e) = handle.flush() {
@@ -440,17 +414,8 @@ fn run_uuid(args: &Args) -> Result<()> {
             UuidVersion::V7 => next_v7_bytes(&mut rng)?,
         };
         format_uuid_bytes_buf(&bytes, &mut buf);
-        if let Err(e) = handle.write_all(&buf) {
-            if e.kind() == std::io::ErrorKind::BrokenPipe {
-                break;
-            }
-            return Err(e.into());
-        }
-        if let Err(e) = handle.write_all(b"\n") {
-            if e.kind() == std::io::ErrorKind::BrokenPipe {
-                break;
-            }
-            return Err(e.into());
+        if write_or_break(&mut handle, &buf)? || write_or_break(&mut handle, b"\n")? {
+            break;
         }
     }
     if let Err(e) = handle.flush() {
@@ -508,11 +473,8 @@ fn run_typeid(args: &Args) -> Result<()> {
             line[p + 27] = b'\n';
             p + 28
         };
-        if let Err(e) = handle.write_all(&line[..line_len]) {
-            if e.kind() == std::io::ErrorKind::BrokenPipe {
-                break;
-            }
-            return Err(e.into());
+        if write_or_break(&mut handle, &line[..line_len])? {
+            break;
         }
     }
     if let Err(e) = handle.flush() {

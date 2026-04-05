@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Extracted `write_or_break` helper in `main.rs` to eliminate duplicated
+  `BrokenPipe` error-handling boilerplate across all six `run_*` functions
+  (~72 lines replaced with 11 one-liners). No behaviour change.
+
 ---
 
 ## [2.0.0] — 2026-04-04
